@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+lightfm
+numpy
+pandas
+scikit-learn
+scipy
+psycopg2-binary
+python-dotenv
+apscheduler
