@@ -7,15 +7,14 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: 1234
-      POSTGRES_DB: bookwheel-recommend
-  ports:
-    - "5433:5432"
-  volumes:
-    - bookwheel-recommend-postgres-data:/var/lib/postgresql/data
-    - ./init:/docker-entrypoint-initdb.d
-    - ./rdb:/rdb
-  networks:
-    - bookwheel-recommend-network
+    ports:
+      - "5433:5432"
+    volumes:
+      - bookwheel-recommend-postgres-data:/var/lib/postgresql/data
+      - ./init:/docker-entrypoint-initdb.d
+      - ./rdb:/rdb
+    networks:
+      - bookwheel-recommend-network
 
 volumes:
   bookwheel-recommend-postgres-data:
