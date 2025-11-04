@@ -1,0 +1,297 @@
+generator client {
+    // nestjs 개발 -> prisma-client-js
+    // python 개발 -> prisma-client-py
+  provider = "prisma-client-py"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  idx              Int       @id @default(autoincrement())
+  nickname         String    @default("새로운햄스터") @db.VarChar(255)
+  profileImagePath String?   @map("profile_image_path") @db.VarChar(255)
+  type             String?   @db.VarChar(50)
+  age              Int?
+  gender           String?   @db.VarChar(10)
+  createdAt        DateTime  @default(now()) @map("created_at")
+  deletedAt        DateTime? @map("deleted_at")
+
+  basicAuths       UserBasic?
+  socialAuths      UserSocial?
+  reviews          BookReview[]
+  surveyResponses  SurveyResponse[] @relation("SurveyResponseUser")
+  messagesSent     Message[]        @relation("SenderMessages")
+  messagesReceived Message[]        @relation("ReceiverMessages")
+  partiesHosted    Party[]          @relation("PartyHost")
+  partyMemberships PartyMember[]
+  friendsRequested Friend[]         @relation("RequestedFriends")
+  friendsReceived  Friend[]         @relation("ReceivedFriends")
+  toReads          ToRead[]
+  ratings          BookRating[]
+  highlights       BookHighlight[]
+  comments         BookComment[]
+
+  @@map("user_tb")
+}
+
+model UserBasic {
+  userIdx  Int    @id @map("user_idx") // PK and FK
+  id       String @unique @db.VarChar(255)
+  password String @db.VarChar(255)
+  email    String @db.VarChar(255)
+
+  user User @relation(fields: [userIdx], references: [idx])
+
+  @@map("user_basic_tb")
+}
+
+model UserSocial {
+  userIdx      Int    @id @map("user_idx")
+  providerName String @map("provider_name") @db.VarChar(50)
+  snsId        String @unique @map("sns_id") @db.VarChar(255)
+
+  user User @relation(fields: [userIdx], references: [idx])
+
+  @@map("user_social_tb")
+}
+
+model Book {
+  idx             Int       @id @default(autoincrement())
+  goodreadsBookId BigInt    @map("goodreads_book_id") @unique
+  workId          BigInt    @map("work_id") @unique
+  title           String   @db.VarChar(255)
+  author          String   @db.VarChar(255)
+  publicationYear Int?      @map("publication_year")
+  description     String?   @db.VarChar(512)
+  bookFilePath    String    @map("book_file_path") @db.VarChar(255)
+  coverImagePath  String?   @map("cover_image_path") @db.VarChar(255)
+  averageRating   Float?    @map("average_rating")
+  ratingsCount    Int?      @map("ratings_count")
+  languageCode    String?   @map("language_code") @db.VarChar(10)
+  isbn            String?   @db.VarChar(13) @unique
+  koreanTitle     String?   @map("korean_title") @db.VarChar(255)
+  koreanAuthor    String?   @map("korean_author") @db.VarChar(255)
+  koreanCoverPath String?   @map("korean_cover_path") @db.VarChar(512) 
+  createdAt       DateTime  @default(now()) @map("created_at")
+  deletedAt       DateTime? @map("deleted_at")
+
+  reviews    BookReview[]
+  ratings    BookRating[]
+  tags       BookTag[]
+  parties    Party[]
+  toReads    ToRead[]
+  highlights BookHighlight[]
+  comments   BookComment[]
+
+  @@map("book_tb")
+}
+
+model BookReview {
+  idx       Int       @id @default(autoincrement())
+  bookIdx   Int       @map("book_idx")
+  userIdx   Int       @map("user_idx")
+  content   String?   @db.VarChar(512) // VARCHAR 길이 설정
+  createdAt DateTime  @default(now()) @map("created_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  user User @relation(fields: [userIdx], references: [idx])
+  book Book @relation(fields: [bookIdx], references: [idx])
+
+  // UNIQUE INDEX IDX_book_review_tb
+  @@unique([bookIdx, userIdx], map: "IDX_book_review_tb")
+  @@map("book_review_tb")
+}
+
+model BookRating {
+  userIdx   Int       @map("user_idx")
+  bookIdx   Int       @map("book_idx")
+  rating    Float
+  createdAt DateTime  @default(now()) @map("created_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  user User @relation(fields: [userIdx], references: [idx])
+  book Book @relation(fields: [bookIdx], references: [idx])
+
+  @@unique([bookIdx, userIdx], map: "IDX_book_rating_tb")
+  @@map("book_rating_tb")
+}
+
+model Tag {
+  idx     Int    @id @default(autoincrement())
+  tagName String @map("tag_name") @db.VarChar(50) // NOT NULL
+
+  books BookTag[]
+
+  @@map("tag_tb")
+}
+
+model BookTag {
+  goodreadsBookId BigInt @map("goodreads_book_id")
+  tagIdx  Int @map("tag_idx")
+  count   Int @default(1)
+
+  book Book @relation(fields: [goodreadsBookId], references: [goodreadsBookId])
+  tag  Tag  @relation(fields: [tagIdx], references: [idx])
+
+  // UNIQUE INDEX IDX_book_tag_tb
+  @@id([goodreadsBookId, tagIdx])
+  @@map("book_tag_tb")
+}
+
+model BookHighlight {
+  idx       Int       @id @default(autoincrement())
+  userIdx   Int       @map("user_idx") // 'user_dx' 오타 수정 및 NOT NULL 보장
+  bookIdx   Int       @map("book_idx")
+  cfiRange  String    @map("cfi_range") @db.Text
+  colorCode String    @map("color_code") @db.VarChar(10) // NOT NULL
+  createdAt DateTime  @default(now()) @map("created_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  // Relationships
+  user     User          @relation(fields: [userIdx], references: [idx])
+  book     Book          @relation(fields: [bookIdx], references: [idx])
+  comments BookComment[] // Comment와의 1:N 관계
+
+  // UNIQUE INDEX (사용자별 같은 구간 하이라이트 방지)
+  @@unique([userIdx, bookIdx, cfiRange])
+  @@map("book_highlight_tb")
+}
+
+model BookComment {
+  idx          Int      @id @default(autoincrement())
+  userIdx      Int      @map("user_idx")
+  bookIdx      Int      @map("book_idx")
+  highlightIdx Int      @map("highlight_idx")
+  content      String   @db.VarChar(512) // NOT NULL
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  // Relationships
+  user      User          @relation(fields: [userIdx], references: [idx])
+  book      Book          @relation(fields: [bookIdx], references: [idx])
+  highlight BookHighlight @relation(fields: [highlightIdx], references: [idx])
+
+  @@map("book_comment_tb")
+}
+
+model Friend {
+  idx            Int       @id @default(autoincrement())
+  requestUserIdx Int       @map("request_user_idx") // 오타 'request_uer_idx' 수정 및 NOT NULL 보장
+  receiveUserIdx Int       @map("receive_user_idx") // NOT NULL 보장
+  status         String    @default("PENDING") @db.VarChar(50)
+  createdAt      DateTime  @default(now()) @map("created_at")
+  deletedAt      DateTime? @map("deleted_at")
+
+  // Relationships
+  requestUser User @relation("RequestedFriends", fields: [requestUserIdx], references: [idx])
+  receiveUser User @relation("ReceivedFriends", fields: [receiveUserIdx], references: [idx])
+
+  // UNIQUE INDEX IDX_friend_tb
+  @@unique([requestUserIdx, receiveUserIdx], map: "IDX_friend_tb")
+  @@map("friend_tb")
+}
+
+model Message {
+  idx         Int       @id @default(autoincrement())
+  senderIdx   Int       @map("sender_idx")
+  receiverIdx Int       @map("receiver_idx")
+  content     String    @db.VarChar(512) // VARCHAR NOT NULL
+  isRead      Boolean?  @default(false) @map("is_read")
+  sentAt      DateTime  @default(now()) @map("sent_at") // DATE 타입을 DateTime으로 수정 (시간 기록)
+  deletedAt   DateTime? @map("deleted_at")
+
+  // Relationships
+  sender   User @relation("SenderMessages", fields: [senderIdx], references: [idx])
+  receiver User @relation("ReceiverMessages", fields: [receiverIdx], references: [idx])
+
+  @@map("message_tb")
+}
+
+model Party {
+  idx            Int       @id @default(autoincrement())
+  hostUserIdx    Int       @map("host_user_idx")
+  bookIdx        Int       @map("book_idx")
+  title          String    @db.VarChar(255)
+  description    String    @db.VarChar(512)
+  maxMembers     Int       @map("max_members")
+  currentMembers Int       @map("current_members")
+  status         String    @default("OPEN") @db.VarChar(50)
+  startDate      DateTime? @map("start_date") // DATE 타입 대신 DateTime
+  isPrivate      Boolean   @default(false) @map("is_private")
+  password       String?   @db.VarChar(255) // INT 대신 String (해싱된 PW 저장)
+  createdAt      DateTime  @default(now()) @map("created_at")
+  deletedAt      DateTime? @map("deleted_at")
+
+  // Relationships
+  host        User          @relation("PartyHost", fields: [hostUserIdx], references: [idx])
+  book        Book          @relation(fields: [bookIdx], references: [idx])
+  memberships PartyMember[]
+
+  @@map("party_tb")
+}
+
+model PartyMember {
+  partyIdx Int    @map("party_idx")
+  userIdx  Int    @map("user_idx")
+  status   String @db.VarChar(50)
+
+  // Relationships
+  party Party @relation(fields: [partyIdx], references: [idx])
+  user  User  @relation(fields: [userIdx], references: [idx])
+
+  // Composite Primary Key (IDX_party_members_tb)
+  @@id([partyIdx, userIdx])
+  @@map("party_members_tb")
+}
+
+model SurveyQuestion {
+  idx     Int     @id @default(autoincrement())
+  content String? @db.VarChar(255)
+
+  options   SurveyOption[]
+  responses SurveyResponse[]
+
+  @@map("survey_question_tb")
+}
+
+model SurveyOption {
+  idx         Int     @id @default(autoincrement())
+  questionIdx Int     @map("question_idx") // NOT NULL
+  content     String? @db.VarChar(255) // VARCHAR 길이 설정
+
+  question  SurveyQuestion   @relation(fields: [questionIdx], references: [idx])
+  responses SurveyResponse[]
+
+  @@map("survey_option_tb")
+}
+
+model SurveyResponse {
+  idx         Int       @default(autoincrement())
+  userIdx     Int       @map("user_idx")
+  optionIdx   Int       @map("option_idx")
+  questionIdx Int       @map("question_idx")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+
+  user     User           @relation("SurveyResponseUser", fields: [userIdx], references: [idx])
+  option   SurveyOption   @relation(fields: [optionIdx], references: [idx])
+  question SurveyQuestion @relation(fields: [questionIdx], references: [idx])
+
+  @@id([idx, userIdx, optionIdx])
+  @@map("survey_response_tb")
+}
+
+model ToRead {
+  userIdx  Int      @map("user_idx")
+  bookIdx  Int      @map("book_idx")
+  markedAt DateTime @default(now()) @map("marked_at")
+
+  user User @relation(fields: [userIdx], references: [idx])
+  book Book @relation(fields: [bookIdx], references: [idx])
+
+  @@id([userIdx, bookIdx])
+  @@map("to_read_tb")
+}

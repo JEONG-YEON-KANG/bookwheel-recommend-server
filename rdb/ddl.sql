@@ -25,21 +25,21 @@ CREATE TABLE "user_social_tb" (
 
 CREATE TABLE "book_tb" (
   "idx"                SERIAL       PRIMARY KEY,
-  "goodreads_book_id"  BIGINT      NOT NULL UNIQUE,
-  "work_id"            BIGINT      NOT NULL UNIQUE,
-  "title"              TEXT,
-  "author"             TEXT,
+  "goodreads_book_id"  BIGINT       NOT NULL UNIQUE, // Goodreads 고유 ID 
+  "work_id"            BIGINT       NOT NULL UNIQUE, // 작품 ID (원본 책의 여러 버전을 하나로 묶음)
+  "title"              TEXT         NOT NULL,
+  "author"             TEXT         NOT NULL,
   "publication_year"   INTEGER,
   "description"        VARCHAR(512),
   "book_file_path"     VARCHAR(255) NOT NULL,
   "cover_image_path"   VARCHAR(255),
-  "average_rating"     REAL,
-  "ratings_count"      INTEGER,
-  "language_code"      VARCHAR(10),
-  "isbn"               VARCHAR(20)  UNIQUE,  
-  "korean_title"       VARCHAR(255),
-  "korean_author"      VARCHAR(255),
-  "korean_cover_path"  VARCHAR(512),
+  "average_rating"     REAL         NOT NULL, // 평균 별점
+  "ratings_count"      INTEGER      NOT NULL, // 별점 참여자 수
+  "language_code"      VARCHAR(10), // 언어 코드 (책의 언어)
+  "isbn"               VARCHAR(13)  UNIQUE,  // ISBN 국제 표준 도서 번호
+  "korean_title"       TEXT, // 한국어번역 제목
+  "korean_author"      TEXT, // 한국어판 저자/역자
+  "korean_cover_path"  VARCHAR(512), // 한국어판 커버 이미지
   "created_at"         TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "deleted_at"         TIMESTAMP(3)
 );
