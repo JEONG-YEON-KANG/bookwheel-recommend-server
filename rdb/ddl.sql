@@ -69,7 +69,6 @@ CREATE TABLE "tag_tb" (
 CREATE TABLE "book_tag_tb" (
   "book_idx" INTEGER NOT NULL,
   "tag_idx"  INTEGER NOT NULL,
-  "count"    INTEGER NOT NULL DEFAULT 1,
   PRIMARY KEY ("book_idx", "tag_idx") -- 복합 PK 설정
 );
 

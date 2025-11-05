@@ -130,7 +130,6 @@ model Tag {
 model BookTag {
   bookIdx Int @map("book_idx")
   tagIdx  Int @map("tag_idx")
-  count   Int @default(1)
 
   book Book @relation(fields: [bookIdx], references: [idx])
   tag  Tag  @relation(fields: [tagIdx], references: [idx])
