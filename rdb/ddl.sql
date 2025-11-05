@@ -24,22 +24,21 @@ CREATE TABLE "user_social_tb" (
 );
 
 CREATE TABLE "book_tb" (
-  "idx"                SERIAL       PRIMARY KEY,
-  "goodreads_book_id"  BIGINT       NOT NULL UNIQUE, // Goodreads 고유 ID 
-  "work_id"            BIGINT       NOT NULL UNIQUE, // 작품 ID (원본 책의 여러 버전을 하나로 묶음)
+  "idx"                INTEGER       PRIMARY KEY,
   "title"              TEXT         NOT NULL,
   "author"             TEXT         NOT NULL,
+  "publisher"          VARCHAR(255),
   "publication_year"   INTEGER,
-  "description"        VARCHAR(512),
-  "book_file_path"     VARCHAR(255) NOT NULL,
-  "cover_image_path"   VARCHAR(255),
-  "average_rating"     REAL         NOT NULL, // 평균 별점
-  "ratings_count"      INTEGER      NOT NULL, // 별점 참여자 수
-  "language_code"      VARCHAR(10), // 언어 코드 (책의 언어)
-  "isbn"               VARCHAR(13)  UNIQUE,  // ISBN 국제 표준 도서 번호
-  "korean_title"       TEXT, // 한국어번역 제목
-  "korean_author"      TEXT, // 한국어판 저자/역자
-  "korean_cover_path"  VARCHAR(512), // 한국어판 커버 이미지
+  "description"        TEXT,
+  "book_file_path"     VARCHAR(512) NOT NULL,
+  "cover_image_path"   VARCHAR(512) NOT NULL,
+  "average_rating"     REAL         NOT NULL, -- 평균 별점
+  "ratings_count"      INTEGER      NOT NULL, -- 별점 참여자 수
+  "language_code"      VARCHAR(10), -- 언어 코드 (책의 언어)
+  "isbn13"             VARCHAR(13)  UNIQUE,  -- ISBN 국제 표준 도서 번호
+  "korean_title"       TEXT, -- 한국어번역 제목
+  "korean_author"      TEXT, -- 한국어판 저자/역자
+  "korean_cover_path"  VARCHAR(512), -- 한국어판 커버 이미지
   "created_at"         TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "deleted_at"         TIMESTAMP(3)
 );
@@ -64,14 +63,14 @@ CREATE TABLE "book_rating_tb" (
 
 CREATE TABLE "tag_tb" (
   "idx"      SERIAL       PRIMARY KEY,
-  "tag_name" VARCHAR(50)  NOT NULL
+  "name"     VARCHAR(50)  NOT NULL
 );
 
 CREATE TABLE "book_tag_tb" (
-  "goodreads_book_id" BIGINT NOT NULL,
-  "tag_idx"           INTEGER NOT NULL,
-  "count"             INTEGER NOT NULL DEFAULT 1,
-  PRIMARY KEY ("goodreads_book_id", "tag_idx") -- 복합 PK 설정
+  "book_idx" INTEGER NOT NULL,
+  "tag_idx"  INTEGER NOT NULL,
+  "count"    INTEGER NOT NULL DEFAULT 1,
+  PRIMARY KEY ("book_idx", "tag_idx") -- 복합 PK 설정
 );
 
 CREATE TABLE "book_highlight_tb" (
@@ -196,7 +195,7 @@ ALTER TABLE "book_review_tb" ADD CONSTRAINT "FK_book_review_tb_user_idx" FOREIGN
 ALTER TABLE "book_review_tb" ADD CONSTRAINT "FK_book_review_tb_book_idx" FOREIGN KEY ("book_idx") REFERENCES "book_tb" ("idx") ON DELETE CASCADE;
 ALTER TABLE "book_rating_tb" ADD CONSTRAINT "FK_book_rating_tb_user_idx" FOREIGN KEY ("user_idx") REFERENCES "user_tb" ("idx");
 ALTER TABLE "book_rating_tb" ADD CONSTRAINT "FK_book_rating_tb_book_idx" FOREIGN KEY ("book_idx") REFERENCES "book_tb" ("idx") ON DELETE CASCADE;
-ALTER TABLE "book_tag_tb" ADD CONSTRAINT "FK_book_tag_tb_goodreads_book_id" FOREIGN KEY ("goodreads_book_id") REFERENCES "book_tb" ("goodreads_book_id") ON DELETE CASCADE;
+ALTER TABLE "book_tag_tb" ADD CONSTRAINT "FK_book_tag_tb_book_idx" FOREIGN KEY ("book_idx") REFERENCES "book_tb" ("idx") ON DELETE CASCADE;
 ALTER TABLE "book_tag_tb" ADD CONSTRAINT "FK_book_tag_tb_tag_idx" FOREIGN KEY ("tag_idx") REFERENCES "tag_tb" ("idx");
 ALTER TABLE "to_read_tb" ADD CONSTRAINT "FK_to_read_tb_user_idx" FOREIGN KEY ("user_idx") REFERENCES "user_tb" ("idx");
 ALTER TABLE "to_read_tb" ADD CONSTRAINT "FK_to_read_tb_book_idx" FOREIGN KEY ("book_idx") REFERENCES "book_tb" ("idx");
@@ -213,5 +212,5 @@ ALTER TABLE "book_comment_tb" ADD CONSTRAINT "FK_book_comment_tb_highlight_idx" 
 CREATE UNIQUE INDEX "IDX_book_review_tb" ON "book_review_tb" ("book_idx", "user_idx");
 CREATE UNIQUE INDEX "IDX_friend_tb" ON "friend_tb" ("request_user_idx", "receive_user_idx");
 CREATE UNIQUE INDEX "IDX_party_members_tb" ON "party_members_tb" ("party_idx", "user_idx");
-CREATE UNIQUE INDEX "IDX_book_tag_tb" ON "book_tag_tb" ("goodreads_book_id", "tag_idx");
+CREATE UNIQUE INDEX "IDX_book_tag_tb" ON "book_tag_tb" ("book_idx", "tag_idx");
 CREATE UNIQUE INDEX "IDX_to_read_tb" ON "to_read_tb" ("user_idx", "book_idx");

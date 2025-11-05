@@ -59,22 +59,21 @@ model UserSocial {
 }
 
 model Book {
-  idx             Int       @id @default(autoincrement())
-  goodreadsBookId BigInt    @map("goodreads_book_id") @unique
-  workId          BigInt    @map("work_id") @unique
-  title           String   @db.VarChar(255)
-  author          String   @db.VarChar(255)
+  idx             Int       @id
+  title           String    @db.Text
+  author          String    @db.Text
+  publisher       String?   @db.VarChar(255)
   publicationYear Int?      @map("publication_year")
-  description     String?   @db.VarChar(512)
-  bookFilePath    String    @map("book_file_path") @db.VarChar(255)
-  coverImagePath  String?   @map("cover_image_path") @db.VarChar(255)
-  averageRating   Float?    @map("average_rating")
-  ratingsCount    Int?      @map("ratings_count")
+  description     String?   @db.Text
+  bookFilePath    String    @map("book_file_path") @db.VarChar(512)
+  coverImagePath  String    @map("cover_image_path") @db.VarChar(512)
+  averageRating   Float     @map("average_rating")
+  ratingsCount    Int       @map("ratings_count")
   languageCode    String?   @map("language_code") @db.VarChar(10)
-  isbn            String?   @db.VarChar(13) @unique
-  koreanTitle     String?   @map("korean_title") @db.VarChar(255)
-  koreanAuthor    String?   @map("korean_author") @db.VarChar(255)
-  koreanCoverPath String?   @map("korean_cover_path") @db.VarChar(512) 
+  isbn13          String?   @db.VarChar(13) @unique
+  koreanTitle     String?   @map("korean_title") @db.Text
+  koreanAuthor    String?   @map("korean_author") @db.Text
+  koreanCoverPath String?   @map("korean_cover_path") @db.VarChar(512)
   createdAt       DateTime  @default(now()) @map("created_at")
   deletedAt       DateTime? @map("deleted_at")
 
@@ -121,7 +120,7 @@ model BookRating {
 
 model Tag {
   idx     Int    @id @default(autoincrement())
-  tagName String @map("tag_name") @db.VarChar(50) // NOT NULL
+  name    String @db.VarChar(50)
 
   books BookTag[]
 
@@ -129,15 +128,15 @@ model Tag {
 }
 
 model BookTag {
-  goodreadsBookId BigInt @map("goodreads_book_id")
+  bookIdx Int @map("book_idx")
   tagIdx  Int @map("tag_idx")
   count   Int @default(1)
 
-  book Book @relation(fields: [goodreadsBookId], references: [goodreadsBookId])
+  book Book @relation(fields: [bookIdx], references: [idx])
   tag  Tag  @relation(fields: [tagIdx], references: [idx])
 
   // UNIQUE INDEX IDX_book_tag_tb
-  @@id([goodreadsBookId, tagIdx])
+  @@id([bookIdx, tagIdx])
   @@map("book_tag_tb")
 }
 
