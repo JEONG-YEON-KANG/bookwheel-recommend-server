@@ -35,7 +35,7 @@ CREATE TABLE "book_tb" (
   "average_rating"     REAL         NOT NULL, -- 평균 별점
   "ratings_count"      INTEGER      NOT NULL, -- 별점 참여자 수
   "language_code"      VARCHAR(10), -- 언어 코드 (책의 언어)
-  "isbn13"             VARCHAR(13)  UNIQUE,  -- ISBN 국제 표준 도서 번호
+  "isbn13"             VARCHAR(13),  -- ISBN 국제 표준 도서 번호
   "korean_title"       TEXT, -- 한국어번역 제목
   "korean_author"      TEXT, -- 한국어판 저자/역자
   "korean_cover_path"  VARCHAR(512), -- 한국어판 커버 이미지

@@ -70,7 +70,7 @@ model Book {
   averageRating   Float     @map("average_rating")
   ratingsCount    Int       @map("ratings_count")
   languageCode    String?   @map("language_code") @db.VarChar(10)
-  isbn13          String?   @db.VarChar(13) @unique
+  isbn13          String?   @db.VarChar(13) 
   koreanTitle     String?   @map("korean_title") @db.Text
   koreanAuthor    String?   @map("korean_author") @db.Text
   koreanCoverPath String?   @map("korean_cover_path") @db.VarChar(512)
