@@ -161,14 +161,22 @@ CREATE TABLE "to_read_tb" (
   PRIMARY KEY ("user_idx", "book_idx") -- 복합 PK 설정
 );
 
-CREATE TABLE "book_history_tb" (
-  "user_idx"     INTEGER      NOT NULL,
-  "book_idx"     INTEGER      NOT NULL,
-  "progress"     REAL         NOT NULL DEFAULT 0.0,
-  "last_cfi"     TEXT,
-  "last_read_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  "created_at"   TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY ("user_idx", "book_idx") -- 복합 PK 설정
+CREATE TABLE "my_book_progress_tb" (
+  "user_idx"               INTEGER      NOT NULL,
+  "book_idx"               INTEGER      NOT NULL,
+  "progress"               REAL         NOT NULL DEFAULT 0.0,
+  "current_cfi_position"   TEXT  NOT NULL,
+  "updated_at"             TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY ("user_idx", "book_idx")
+);
+
+CREATE TABLE "party_book_progress_tb" (
+  "party_idx"              INTEGER      NOT NULL,
+  "user_idx"               INTEGER      NOT NULL,
+  "progress"               REAL         NOT NULL DEFAULT 0.0,
+  "current_cfi_position"   TEXT         NOT NULL,
+  "updated_at"             TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY ("party_idx", "user_idx")
 );
 
 -- DDL Part 2: FOREIGN KEYS and UNIQUE INDEXES
@@ -201,17 +209,21 @@ ALTER TABLE "party_members_tb" ADD CONSTRAINT "FK_party_members_tb_user_idx" FOR
 
 -- Book Activity FKs
 ALTER TABLE "book_review_tb" ADD CONSTRAINT "FK_book_review_tb_user_idx" FOREIGN KEY ("user_idx") REFERENCES "user_tb" ("idx");
-ALTER TABLE "book_review_tb" ADD CONSTRAINT "FK_book_review_tb_book_idx" FOREIGN KEY ("book_idx") REFERENCES "book_tb" ("idx") ON DELETE CASCADE;
+ALTER TABLE "book_review_tb" ADD CONSTRAINT "FK_book_review_tb_book_idx" FOREIGN KEY ("book_idx") REFERENCES "book_tb" ("idx");
 ALTER TABLE "book_rating_tb" ADD CONSTRAINT "FK_book_rating_tb_user_idx" FOREIGN KEY ("user_idx") REFERENCES "user_tb" ("idx");
-ALTER TABLE "book_rating_tb" ADD CONSTRAINT "FK_book_rating_tb_book_idx" FOREIGN KEY ("book_idx") REFERENCES "book_tb" ("idx") ON DELETE CASCADE;
-ALTER TABLE "book_tag_tb" ADD CONSTRAINT "FK_book_tag_tb_book_idx" FOREIGN KEY ("book_idx") REFERENCES "book_tb" ("idx") ON DELETE CASCADE;
+ALTER TABLE "book_rating_tb" ADD CONSTRAINT "FK_book_rating_tb_book_idx" FOREIGN KEY ("book_idx") REFERENCES "book_tb" ("idx");
+ALTER TABLE "book_tag_tb" ADD CONSTRAINT "FK_book_tag_tb_book_idx" FOREIGN KEY ("book_idx") REFERENCES "book_tb" ("idx");
 ALTER TABLE "book_tag_tb" ADD CONSTRAINT "FK_book_tag_tb_tag_idx" FOREIGN KEY ("tag_idx") REFERENCES "tag_tb" ("idx");
 ALTER TABLE "to_read_tb" ADD CONSTRAINT "FK_to_read_tb_user_idx" FOREIGN KEY ("user_idx") REFERENCES "user_tb" ("idx");
 ALTER TABLE "to_read_tb" ADD CONSTRAINT "FK_to_read_tb_book_idx" FOREIGN KEY ("book_idx") REFERENCES "book_tb" ("idx");
 ALTER TABLE "book_highlight_tb" ADD CONSTRAINT "FK_book_highlight_tb_book_idx" FOREIGN KEY ("book_idx") REFERENCES "book_tb" ("idx");
 ALTER TABLE "book_highlight_tb" ADD CONSTRAINT "FK_book_highlight_tb_user_idx" FOREIGN KEY ("user_idx") REFERENCES "user_tb" ("idx");
-ALTER TABLE "book_history_tb" ADD CONSTRAINT "FK_book_history_tb_user_idx" FOREIGN KEY ("user_idx") REFERENCES "user_tb" ("idx") ON DELETE CASCADE;
-ALTER TABLE "book_history_tb" ADD CONSTRAINT "FK_book_history_tb_book_idx" FOREIGN KEY ("book_idx") REFERENCES "book_tb" ("idx") ON DELETE CASCADE;
+ALTER TABLE "my_book_progress_tb" ADD CONSTRAINT "FK_my_book_progress_tb_user_idx" FOREIGN KEY ("user_idx") REFERENCES "user_tb" ("idx");
+ALTER TABLE "my_book_progress_tb" ADD CONSTRAINT "FK_my_book_progress_tb_book_idx" FOREIGN KEY ("book_idx") REFERENCES "book_tb" ("idx");
+ALTER TABLE "party_book_progress_tb" ADD CONSTRAINT "FK_party_book_progress_tb_party_idx" FOREIGN KEY ("party_idx") REFERENCES "party_tb" ("idx");
+ALTER TABLE "party_book_progress_tb" ADD CONSTRAINT "FK_party_book_progress_tb_user_idx" FOREIGN KEY ("user_idx") REFERENCES "user_tb" ("idx");
+
+
 
 -- Comment / Highlight FKs
 ALTER TABLE "book_comment_tb" ADD CONSTRAINT "FK_book_comment_tb_user_idx" FOREIGN KEY ("user_idx") REFERENCES "user_tb" ("idx");
