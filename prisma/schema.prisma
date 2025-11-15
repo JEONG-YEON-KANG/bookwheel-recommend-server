@@ -33,6 +33,7 @@ model User {
   ratings          BookRating[]
   highlights       BookHighlight[]
   comments         BookComment[]
+  bookHistories    BookHistory[]
 
   @@map("user_tb")
 }
@@ -84,6 +85,7 @@ model Book {
   toReads    ToRead[]
   highlights BookHighlight[]
   comments   BookComment[]
+  histories  BookHistory[]
 
   @@map("book_tb")
 }
@@ -292,4 +294,19 @@ model ToRead {
 
   @@id([userIdx, bookIdx])
   @@map("to_read_tb")
+}
+
+model BookHistory {
+  userIdx     Int       @map("user_idx")
+  bookIdx     Int       @map("book_idx")
+  progress    Float     @default(0.0)
+  lastCfi     String?   @map("last_cfi") @db.Text
+  lastReadAt  DateTime  @default(now()) @map("last_read_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userIdx], references: [idx])
+  book Book @relation(fields: [bookIdx], references: [idx])
+
+  @@id([userIdx, bookIdx])
+  @@map("book_history_tb")
 }
