@@ -10,3 +10,5 @@ python-dotenv
 apscheduler
 sqlalchemy
 tqdm
+matplotlib
+seaborn
