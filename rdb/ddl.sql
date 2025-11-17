@@ -141,7 +141,8 @@ CREATE TABLE "survey_question_tb" (
 CREATE TABLE "survey_option_tb" (
   "idx"          SERIAL       PRIMARY KEY,
   "question_idx" INTEGER      NOT NULL,
-  "content"      VARCHAR(255)
+  "content"      VARCHAR(255),
+  "book_idx"     INTEGER
 );
 
 CREATE TABLE "survey_response_tb" (
@@ -190,6 +191,7 @@ ALTER TABLE "survey_option_tb" ADD CONSTRAINT "FK_survey_option_tb_question_idx"
 ALTER TABLE "survey_response_tb" ADD CONSTRAINT "FK_survey_response_tb_user_idx" FOREIGN KEY ("user_idx") REFERENCES "user_tb" ("idx");
 ALTER TABLE "survey_response_tb" ADD CONSTRAINT "FK_survey_response_tb_question_idx" FOREIGN KEY ("question_idx") REFERENCES "survey_question_tb" ("idx");
 ALTER TABLE "survey_response_tb" ADD CONSTRAINT "FK_survey_response_tb_option_idx" FOREIGN KEY ("option_idx") REFERENCES "survey_option_tb" ("idx");
+ALTER TABLE "survey_option_tb" ADD CONSTRAINT "FK_survey_option_tb_book_idx" FOREIGN KEY ("book_idx") REFERENCES "book_tb" ("idx");
 
 -- Friendship FKs
 ALTER TABLE "friend_tb" ADD CONSTRAINT "FK_friend_tb_request_user_idx" FOREIGN KEY ("request_user_idx") REFERENCES "user_tb" ("idx");

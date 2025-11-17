@@ -87,6 +87,7 @@ model Book {
   highlights BookHighlight[]
   comments   BookComment[]
   myBookProgresses MyBookProgress[]
+  surveyOptions    SurveyOption[]
 
   @@map("book_tb")
 }
@@ -262,9 +263,11 @@ model SurveyOption {
   idx         Int     @id @default(autoincrement())
   questionIdx Int     @map("question_idx") // NOT NULL
   content     String? @db.VarChar(255) // VARCHAR 길이 설정
+  bookIdx     Int?    @map("book_idx") // 책 선택 옵션용
 
   question  SurveyQuestion   @relation(fields: [questionIdx], references: [idx])
   responses SurveyResponse[]
+  book      Book?            @relation(fields: [bookIdx], references: [idx])
 
   @@map("survey_option_tb")
 }
