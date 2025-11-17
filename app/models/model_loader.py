@@ -8,18 +8,29 @@ class LightFMModel:
     def __init__(
         self,
         model_path : Path = settings.MODEL_PATH,
-        user_feat_path : Path = settings.USER_FEATURE_PATH,
+        dataset_path : Path = settings.DATASET_PATH,
         item_feat_path : Path = settings.ITEM_FEATURE_PATH,
     ):
         with open(model_path, "rb") as f:
             self.model : LightFM = pickle.load(f)
         
-        self.user_features = np.load(user_feat_path)
-        self.item_features = np.load(item_feat_path)
+        with open(dataset_path, "rb") as f:
+            self.dataset = pickle.load(f)
+            
+        with open(item_feat_path, "rb") as f:
+            self.item_features = pickle.load(f)
+        
+        # 매핑 (DB idx <-> LightFM internal idx)
+        self.user_id_map = self.dataset._user_id_mapping
+        self.item_id_map = self.dataset._item_id_mapping
+        
+        # 역매핑 (LightFM internal idx <-> DB idx)
+        self.rev_user_id_map = {v: k for k, v in self.user_id_map.items()}
+        self.rev_item_id_map = {v: k for k, v in self.item_id_map.items()}
         
         # 크기 저장
-        self.n_users = self.user_features.shape[0]
-        self.n_items = self.item_features.shape[0]
+        self.n_users = self.user_embeddings.shape[0]
+        self.n_items = self.item_embeddings.shape[0]
         
 lightfm_model = LightFMModel()
 

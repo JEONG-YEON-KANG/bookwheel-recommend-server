@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 from sqlalchemy import create_engine
 from dotenv import load_dotenv
+import traceback
 
 from lightfm import LightFM
 from lightfm.data import Dataset
@@ -134,4 +135,5 @@ if __name__ == "__main__":
         run_training()
     except Exception as e:
         print(f"❌ 학습 중 오류 발생: {e}")
+        traceback.print_exc()
 
