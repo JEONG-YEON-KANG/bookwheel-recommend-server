@@ -29,8 +29,8 @@ class LightFMModel:
         self.rev_item_id_map = {v: k for k, v in self.item_id_map.items()}
         
         # 크기 저장
-        self.n_users = self.user_embeddings.shape[0]
-        self.n_items = self.item_embeddings.shape[0]
+        self.n_users = len(self.user_id_map)
+        self.n_items = len(self.item_id_map)
         
 lightfm_model = LightFMModel()
 

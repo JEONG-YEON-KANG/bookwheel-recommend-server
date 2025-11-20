@@ -12,3 +12,4 @@ class UserListResponse(BaseModel):
 # 설문 기반 초기 추천 
 class RecommendInitRequest(BaseModel):
     genreList : List[int]
+    bookIdxList : List[int]

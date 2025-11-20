@@ -5,6 +5,7 @@ CREATE TABLE "user_tb" (
   "nickname"           VARCHAR(255)  NOT NULL DEFAULT '새로운햄스터',
   "profile_image_path" VARCHAR(255),
   "type"               VARCHAR(50),
+  "gender"             VARCHAR(50),
   "age"                INTEGER,
   "created_at"         TIMESTAMP(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "deleted_at"         TIMESTAMP(3)

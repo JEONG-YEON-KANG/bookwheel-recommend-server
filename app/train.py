@@ -4,136 +4,128 @@ import pandas as pd
 import numpy as np
 from sqlalchemy import create_engine
 from dotenv import load_dotenv
-import traceback
-
 from lightfm import LightFM
 from lightfm.data import Dataset
-from lightfm.evaluation import precision_at_k, recall_at_k, auc_score
 from lightfm.cross_validation import random_train_test_split
+from lightfm.evaluation import precision_at_k, auc_score
+# 텍스트 분석 라이브러리
+from sklearn.feature_extraction.text import TfidfVectorizer
 
 def run_training():
     load_dotenv()
-    DATABASE_URL = os.getenv("DATABASE_URL")
-    if DATABASE_URL is None:
-        raise ValueError("DATABASE_URL is not set in environment variables.")
+    ARTIFACTS_DIR = "app/artifacts"
+    os.makedirs(ARTIFACTS_DIR, exist_ok=True)
 
-    engine = create_engine(DATABASE_URL)
+    engine = create_engine(os.getenv("DATABASE_URL"))
+    print("--- [1/6] 데이터 로딩 ---")
 
-    ratings = pd.read_sql("""
-        SELECT user_idx, book_idx, rating
-        FROM book_rating_tb
-        WHERE deleted_at IS NULL
-    """, engine)
+    # 1. 데이터 로드 (Author, Description 포함)
+    ratings = pd.read_sql("SELECT user_idx, book_idx, rating FROM book_rating_tb WHERE deleted_at IS NULL", engine)
+    books = pd.read_sql("SELECT idx AS book_idx, author, description FROM book_tb WHERE deleted_at IS NULL", engine)
+    tags = pd.read_sql("SELECT idx AS tag_idx, name FROM tag_tb", engine)
+    book_tags = pd.read_sql("SELECT book_idx, tag_idx FROM book_tag_tb", engine)
 
-    books = pd.read_sql("""
-        SELECT idx as book_idx, author, publication_year
-        FROM book_tb
-        WHERE deleted_at IS NULL
-    """, engine)
-
-    tags = pd.read_sql("""
-        SELECT idx AS tag_idx, name
-        FROM tag_tb
-    """, engine)
-
-    book_tags = pd.read_sql("""
-        SELECT book_idx, tag_idx
-        FROM book_tag_tb
-    """, engine)
-
-    # 3. 전처리 
-    year = pd.to_numeric(books['publication_year'], errors='coerce').fillna(0).astype(int)
-    decade = np.where(year > 0, (year // 10) * 10, -1)
-    books["decade"] = np.where(decade >= 0, (decade.astype(str) + "s"), "unknown")
-
+    # 2. 평점 전처리 (Implicit >= 4)
     ratings = ratings.groupby(["user_idx", "book_idx"])["rating"].mean().reset_index()
+    ratings = ratings[ratings["rating"] >= 4]
+    ratings["rating"] = 1.0
 
-    ratings["rating"] = (ratings["rating"] > 4).astype(np.float32)
+    # 3. 태그 전처리 (최소 5회 이상 등장 태그만)
+    bt = book_tags.merge(tags, on="tag_idx")
+    tag_counts = bt['name'].value_counts()
+    valid_tags = tag_counts[tag_counts >= 5].index
+    bt = bt[bt['name'].isin(valid_tags)]
+    book_tags_map = bt.groupby("book_idx")["name"].apply(list).to_dict()
+    
+    # 4. Description 전처리 (TF-IDF)
+    print("--- [2/6] 줄거리(Description) 키워드 추출 중... ---")
+    books["description"] = books["description"].fillna("")
+    # 중요: 줄거리에서 가장 핵심적인 단어 300개만 뽑음 (너무 많으면 노이즈)
+    tfidf = TfidfVectorizer(max_features=300, stop_words='english')
+    tfidf_matrix = tfidf.fit_transform(books["description"])
+    vocab = tfidf.get_feature_names_out() # 추출된 단어들 (예: magic, war, love...)
 
-    valid_books = ratings["book_idx"].value_counts()[lambda x: x >= 3].index
-    ratings = ratings[ratings["book_idx"].isin(valid_books)]
-
-    bt = book_tags.merge(tags, on="tag_idx", how="left")
-
-    usage = bt.groupby("tag_idx")["book_idx"].count().reset_index().rename(columns={"book_idx":"usage_count"})
-    bt = bt.merge(usage, on="tag_idx", how="left")
-
-    TAG_MIN = 3
-    TAG_MAX = 606
-    bt = bt[(bt["usage_count"] >= TAG_MIN) & (bt["usage_count"] <= TAG_MAX)]
-
-    bt = bt.sort_values(["book_idx", "usage_count"], ascending=[True, False])
-
-    TOP_K = 20
-    bt_top = bt.groupby("book_idx").head(TOP_K)
-
-    book_tags_map = (
-        bt_top.groupby("book_idx")["name"].apply(list).to_dict()
-    )
-
-    # 4. 피처 생성 함수
-    def build_item_features(row) :
+    # 5. Feature 리스트 생성 (Author + Tag + Desc)
+    print("--- [3/6] 모든 Feature 합체 중... ---")
+    feature_list = []
+    
+    # 인덱싱 속도 최적화를 위해 list 변환
+    book_ids = books['book_idx'].values
+    authors = books['author'].values
+    
+    for i, book_id in enumerate(book_ids):
         feats = []
-        feats.append(f"author:{row['author']}")
-        feats.append(f"decade:{row['decade']}")
-        for t in book_tags_map.get(row["book_idx"], []):
-            feats.append(f"tag:{t}")
-        return feats
-
-    books["features"] = books.apply(build_item_features, axis=1)
-
-    dataset = Dataset()
-
-    all_item_features = set()
-    for feats in books["features"]:
-        all_item_features.update(feats)
         
+        # A. 작가 (Author)
+        if authors[i]:
+            feats.append(f"author:{authors[i]}")
+        
+        # B. 태그 (Tag)
+        if book_id in book_tags_map:
+            feats.extend([f"tag:{t}" for t in book_tags_map[book_id]])
+            
+        # C. 줄거리 키워드 (Description)
+        # tfidf_matrix는 희소 행렬이므로 해당 책의 단어 인덱스만 가져옴
+        word_indices = tfidf_matrix[i].indices
+        for idx in word_indices:
+            feats.append(f"desc:{vocab[idx]}")
+            
+        feature_list.append((book_id, feats))
+
+    # 6. Dataset 빌드
+    dataset = Dataset()
+    
+    all_features = set()
+    for _, feats in feature_list:
+        all_features.update(feats)
+
     dataset.fit(
         users=ratings["user_idx"].unique(),
-        items=ratings["book_idx"].unique(),
-        item_features=all_item_features
+        items=books["book_idx"].unique(),
+        item_features=all_features
     )
 
-    (interactions, _) = dataset.build_interactions(
-        (u,i,r) for u, i, r in ratings[["user_idx", "book_idx", "rating"]].itertuples(index=False)
+    interactions, _ = dataset.build_interactions(
+        (u, i) for u, i in ratings[["user_idx", "book_idx"]].itertuples(index=False)
     )
 
-    item_features = dataset.build_item_features(
-        ((row["book_idx"], row["features"]) for _, row in books.iterrows())
+    item_features = dataset.build_item_features(feature_list)
+
+    # 7. Train / Test 분리
+    train, test = random_train_test_split(interactions, test_percentage=0.2, random_state=42)
+
+    # 8. 학습
+    print("--- [4/6] 모델 학습 시작 ---")
+    model = LightFM(
+        loss="warp",
+        no_components=40,
+        learning_rate=0.05,
+        item_alpha=0.0001, # Feature가 많아졌으므로 약한 규제 적용
+        random_state=42
     )
+    model.fit(train, item_features=item_features, epochs=20, num_threads=1, verbose=True)
 
-    train, test = random_train_test_split(interactions, test_percentage=0.1, random_state=42)
-
-    model = LightFM(loss="warp", no_components=64, learning_rate=0.05, random_state=42)
-    model.fit(train, item_features=item_features, epochs=10, num_threads=4, verbose=True)
-
+    # 9. 평가
+    print("--- [5/6] 평가 진행 ---")
     k = 10
-    precision = precision_at_k(model, test, item_features=item_features, k=k).mean()
-    recall = recall_at_k(model, test, item_features=item_features, k=k).mean()
-    auc = auc_score(model, test, item_features=item_features).mean()
+    test_precision = precision_at_k(model, test, item_features=item_features, k=k, num_threads=1).mean()
+    test_auc = auc_score(model, test, item_features=item_features, num_threads=1).mean()
 
-    print(f"Precision@{k}: {precision:.4f}")
-    print(f"Recall@{k}:    {recall:.4f}")
-    print(f"AUC:           {auc:.4f}")
+    print(f"✅ Test Precision@{k}: {test_precision:.4f}")
+    print(f"✅ Test AUC:            {test_auc:.4f}")
 
-    # 모델 및 데이터셋 저장
-    save_path = "models"
-    if not os.path.exists(save_path):
-        os.makedirs(save_path)
-        
-    with open(os.path.join(save_path, "lightfm_model.pkl"), "wb") as f:
+    # 10. 저장
+    print("--- [6/6] 저장 ---")
+    with open(f"{ARTIFACTS_DIR}/lightfm_model.pkl", "wb") as f:
         pickle.dump(model, f)
-
-    with open(os.path.join(save_path, "lightfm_dataset.pkl"), "wb") as f:
+    with open(f"{ARTIFACTS_DIR}/lightfm_dataset.pkl", "wb") as f:
         pickle.dump(dataset, f)
-        
-    with open(os.path.join(save_path, "item_features.pkl"), "wb") as f:
+    with open(f"{ARTIFACTS_DIR}/item_features.pkl", "wb") as f:
         pickle.dump(item_features, f)
-        
-if __name__ == "__main__":
-    try:
-        run_training()
-    except Exception as e:
-        print(f"❌ 학습 중 오류 발생: {e}")
-        traceback.print_exc()
+    
+    bt.to_pickle(f"{ARTIFACTS_DIR}/book_tags_df.pkl")
+    
+    print("🎉 모든 학습 과정 완료! (Author + Tag + Description)")
 
+if __name__ == "__main__":
+    run_training()
