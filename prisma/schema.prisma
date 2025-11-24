@@ -127,6 +127,7 @@ model Tag {
   name    String @db.VarChar(50)
 
   books BookTag[]
+  options SurveyOptionTag[]
 
   @@map("tag_tb")
 }
@@ -268,6 +269,7 @@ model SurveyOption {
   question  SurveyQuestion   @relation(fields: [questionIdx], references: [idx])
   responses SurveyResponse[]
   book      Book?            @relation(fields: [bookIdx], references: [idx])
+  tags      SurveyOptionTag[]
 
   @@map("survey_option_tb")
 }
@@ -289,6 +291,16 @@ model SurveyResponse {
   @@map("survey_response_tb")
 }
 
+model SurveyOptionTag {
+  oprionIdx Int @map("option_idx")
+  tagIdx    Int @map("tag_idx")
+
+  option SurveyOption @relation(fields: [oprionIdx], references: [idx])
+  tag    Tag          @relation(fields: [tagIdx], references: [idx])
+
+  @@id([oprionIdx, tagIdx])
+  @@map("survey_option_tag_tb")
+}
 model ToRead {
   userIdx  Int      @map("user_idx")
   bookIdx  Int      @map("book_idx")
