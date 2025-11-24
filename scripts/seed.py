@@ -1,7 +1,17 @@
+from app.core.constants import (
+    SURVEY_GENRE_MAPPING,
+    SURVEY_MOOD_MAPPING,
+    SURVEY_PURPOSE_MAPPING
+)
 import pandas as pd
 from sqlalchemy import create_engine, text
 import os
+import sys
 from dotenv import load_dotenv
+
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(current_dir)
+sys.path.append(project_root)
 
 # --- 환경 설정 ---
 load_dotenv()
@@ -14,8 +24,6 @@ if not DATABASE_URL:
 engine = create_engine(DATABASE_URL)
 
 # --- 파일 경로 설정 ---
-current_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.dirname(current_dir)
 CSV_DIR = os.path.join(project_root, "goodbooks-10k")
 
 RATINGS_FILE = os.path.join(CSV_DIR, "ratings.csv")
@@ -25,50 +33,16 @@ BOOK_TAGS_FILE = os.path.join(CSV_DIR, "book_tags.csv")
 
 
 # ===========================================================================
-# 설문조사 매핑 데이터
+# [설정] 설문조사 질문 및 옵션 구성 (자동 동기화)
 # ===========================================================================
 
-SURVEY_GENRE_MAPPING = {
-    "소설": ["Fiction", "Literary Fiction", "Realistic Fiction", "Adult Fiction", "Contemporary", "Womens Fiction", "Novels", "Literature", "Drama"],
-    "고전": ["Classics", "Classic Literature", "Literature", "British Literature", "American Literature", "School", "Read For School", "Modern Classics"],
-    "미스터리 / 스릴러": ["Mystery", "Thriller", "Mystery Thriller", "Murder Mystery", "Psychological Thriller", "Legal Thriller", "Spy Thriller", "Crime", "Suspense", "Detective", "Horror"],
-    "판타지": ["Fantasy", "High Fantasy", "Epic Fantasy", "Urban Fantasy", "Magic", "Paranormal", "Supernatural", "Vampires", "Witches", "Fae", "Fairy Tales"],
-    "SF": ["Science Fiction", "Dystopia", "Space", "Time Travel", "Aliens", "Steampunk", "Cyberpunk", "Hard Science Fiction"],
-    "로맨스": ["Romance", "Contemporary Romance", "Historical Romance", "Paranormal Romance", "Regency Romance", "Sports Romance", "Love", "Chick Lit", "Romantic Suspense"],
-    "역사": ["Historical", "Historical Fiction", "History", "War", "World War II", "19th Century", "20th Century", "American History", "Alternative History"],
-    "청소년": ["Young Adult", "Young Adult Fantasy", "Young Adult Contemporary", "Young Adult Romance", "Childrens", "Midldle Grade", "Teen", "Coming of Age"],
-    "인물 / 회고록": ["Biography", "Biography Memoir", "Memoir", "Autobiography"],
-    "자기계발": ["Self Help", "Psychology", "Business", "Leadership", "Personal Development", "Inspirational", "Spirituality", "Productivity"],
-    "논픽션": ["Nonfiction", "Essays", "Philosophy", "Science", "Politics", "Popular Science", "Travel", "Social Science", "Humanities", "Neuroscience"]
-}
-
-SURVEY_MOOD_MAPPING = {
-    "#힐링되는": ["Inspirational", "Spirituality", "Self Help", "Faith"],
-    "#긴장감_넘치는": ["Suspense", "Thriller", "Mystery", "Crime", "Mystery Thriller", "Murder Mystery", "Horror", "Dark"],
-    "#가슴_따뜻한": ["Family", "Love", "Romance", "Contemporary Romance", "Relationships"],
-    "#지적_호기심이_채워지는": ["Nonfiction", "History", "Science", "Philosophy", "Politics", "Economics", "Psychology", "Business"],
-    "#생각이_깊어지는": ["Philosophy", "Psychology", "Classics", "Literary Fiction", "Literature", "Spirituality"],
-    "#가볍게_읽는": ["Chick Lit", "Humor", "Comics", "Graphic Novels", "Manga", "Young Adult", "Romance"],
-    "#유쾌하고_재미있는": ["Humor", "Comics", "Comedy", "Chick Lit"],
-    "#눈물_나는": ["Drama", "Historical Fiction", "War", "Memoir", "Tragedy"]
-}
-
-SURVEY_PURPOSE_MAPPING = {
-    "재미와 교양 쌓기": ["Fiction", "Novels", "Literature", "Classics", "Historical Fiction", "Nonfiction"],
-    "스트레스 해소": ["Fantasy", "Science Fiction", "Comics", "Graphic Novels", "Comedy", "Humor", "Manga", "Young Adult"],
-    "따뜻한 위로와 감동": ["Inspirational", "Spirituality", "Memoir", "Biography", "Faith", "Poetry", "Essays"],
-    "커리어 역량 향상": ["Business", "Leadership", "Management", "Economics", "Fianance", "Money", "Entrepreneurship"],
-    "편안한 휴식": ["Chick Lit", "Romance", "Humor", "Cookbooks", "Travel", "Poetry"],
-    "새로운 관점과 아이디어 얻기": ["Philosophy", "Psychology", "Science", "Politics", "Social Science", "Essays", "History", "Nonfiction"]
-}
-
-# 질문 및 옵션 리스트 생성
 survey_questions = [
-    "주로 어떤 내용의 책에 손이 가시나요?",
-    "책을 통해 어떤 기분을 느끼고 싶으신가요?",
-    "책을 통해 주로 무엇을 얻고 싶으신가요?"
+    "주로 어떤 내용의 책에 손이 가시나요?",      # 장르
+    "책을 통해 어떤 기분을 느끼고 싶으신가요?",  # 분위기
+    "책을 통해 주로 무엇을 얻고 싶으신가요?"     # 목적
 ]
 
+# ★ 상단에서 import한 딕셔너리의 키(Key)를 사용 -> 항상 최신 상태 유지!
 survey_options_list = [
     list(SURVEY_GENRE_MAPPING.keys()),
     list(SURVEY_MOOD_MAPPING.keys()),
@@ -117,14 +91,11 @@ def seed_books(engine):
         "image_url": "cover_image_path",
     })
 
-    # 결측치 및 데이터 정제
     df["publisher"] = df["publisher"].fillna("")
     df["description"] = df["description"].fillna("")
     df["language_code"] = df["language_code"].fillna("")
     df["book_file_path"] = "/default/path/book.epub"
     df["isbn13"] = df["isbn13"].apply(clean_isbn)
-
-    # ISBN 빈값 처리
     df.loc[df["isbn13"] == "", "isbn13"] = None
 
     cols = [
@@ -157,7 +128,6 @@ def seed_ratings(engine):
     df = df.rename(columns={"user_id": "user_idx",
                    "book_id": "book_idx", "rating": "rating"})
 
-    # 유효한 책 ID만 필터링
     valid_books = pd.read_sql("SELECT idx FROM book_tb", engine)[
         "idx"].tolist()
     valid_books_set = set(valid_books)
@@ -234,18 +204,24 @@ def seed_survey_option_tags(engine):
 
 
 # ===========================================================================
-# 3. 메인 실행 (초기화 및 시딩)
+# 3. 메인 실행
 # ===========================================================================
 if __name__ == "__main__":
 
-    # 파일 체크
     for f in [BOOKS_FILE, TAGS_FILE, BOOK_TAGS_FILE, RATINGS_FILE]:
         if not os.path.exists(f):
             print(f"[ERROR] Missing file: {f}")
             exit()
 
-    print("\n Starting Database Reset & Seed...\n")
+    print("\n🚀 Starting Database Reset & Seed...\n")
 
+    # 1. 초기화 (설문 데이터만 초기화하려면 여기만 수정하세요!)
+    with engine.connect() as conn:
+        print("[INFO] Clearing existing data...")
+        conn.execute(text("TRUNCATE TABLE book_rating_tb, book_tag_tb, survey_option_tag_tb, survey_option_tb, survey_question_tb, tag_tb, book_tb, user_tb RESTART IDENTITY CASCADE;"))
+        conn.commit()
+
+    # 2. 기본 데이터
     try:
         max_user_idx = pd.read_csv(RATINGS_FILE)["user_id"].max()
     except:
@@ -257,6 +233,7 @@ if __name__ == "__main__":
     seed_book_tags(engine)
     seed_ratings(engine)
 
+    # 3. 설문 데이터
     seed_survey_questions(engine)
     seed_survey_options(engine)
     seed_survey_option_tags(engine)
