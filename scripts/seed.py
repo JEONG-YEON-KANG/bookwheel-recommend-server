@@ -1,7 +1,7 @@
 from app.core.constants import (
     SURVEY_GENRE_MAPPING,
     SURVEY_MOOD_MAPPING,
-    SURVEY_PURPOSE_MAPPING
+    SURVEY_PURPOSE_MAPPING,
 )
 import pandas as pd
 from sqlalchemy import create_engine, text
@@ -18,8 +18,7 @@ load_dotenv()
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 if not DATABASE_URL:
-    raise ValueError(
-        "[ERROR] DATABASE_URL is not set in environment variables.")
+    raise ValueError("[ERROR] DATABASE_URL is not set in environment variables.")
 
 engine = create_engine(DATABASE_URL)
 
@@ -33,26 +32,30 @@ BOOK_TAGS_FILE = os.path.join(CSV_DIR, "book_tags.csv")
 
 
 # ===========================================================================
-# [설정] 설문조사 질문 및 옵션 구성 (자동 동기화)
+# 설문조사 질문 및 옵션 구성
 # ===========================================================================
 
 survey_questions = [
-    "주로 어떤 내용의 책에 손이 가시나요?",      # 장르
+    "주로 어떤 내용의 책에 손이 가시나요?",  # 장르
     "책을 통해 어떤 기분을 느끼고 싶으신가요?",  # 분위기
-    "책을 통해 주로 무엇을 얻고 싶으신가요?"     # 목적
+    "책을 통해 주로 무엇을 얻고 싶으신가요?",  # 목적
+    "최근에 감명 깊게 읽은 책은 무엇인가요?",  # 도서 선택
 ]
 
-# ★ 상단에서 import한 딕셔너리의 키(Key)를 사용 -> 항상 최신 상태 유지!
+SURVEY_BOOK_IDX_LIST = [2, 9, 4, 10, 15, 374]
+
 survey_options_list = [
     list(SURVEY_GENRE_MAPPING.keys()),
     list(SURVEY_MOOD_MAPPING.keys()),
-    list(SURVEY_PURPOSE_MAPPING.keys())
+    list(SURVEY_PURPOSE_MAPPING.keys()),
+    SURVEY_BOOK_IDX_LIST,
 ]
 
 
 # ===========================================================================
 # 1. CSV 데이터 시딩 함수
 # ===========================================================================
+
 
 def clean_isbn(val):
     if pd.isna(val):
@@ -63,11 +66,8 @@ def clean_isbn(val):
 
 def seed_fake_users(engine, user_count: int):
     print("[INFO] Seeding fake users...")
-    users = pd.DataFrame({
-        "nickname": [f"user_{i}" for i in range(1, user_count + 1)]
-    })
-    users.to_sql("user_tb", engine, if_exists="append",
-                 index=False, chunksize=5000)
+    users = pd.DataFrame({"nickname": [f"user_{i}" for i in range(1, user_count + 1)]})
+    users.to_sql("user_tb", engine, if_exists="append", index=False, chunksize=5000)
 
 
 def seed_books(engine):
@@ -77,19 +77,21 @@ def seed_books(engine):
         return
 
     df = pd.read_csv(BOOKS_FILE)
-    df = df.rename(columns={
-        "book_id": "idx",
-        "title": "title",
-        "authors": "author",
-        "original_publication_year": "publication_year",
-        "language_code": "language_code",
-        "average_rating": "average_rating",
-        "ratings_count": "ratings_count",
-        "publisher": "publisher",
-        "isbn13": "isbn13",
-        "description": "description",
-        "image_url": "cover_image_path",
-    })
+    df = df.rename(
+        columns={
+            "book_id": "idx",
+            "title": "title",
+            "authors": "author",
+            "original_publication_year": "publication_year",
+            "language_code": "language_code",
+            "average_rating": "average_rating",
+            "ratings_count": "ratings_count",
+            "publisher": "publisher",
+            "isbn13": "isbn13",
+            "description": "description",
+            "image_url": "cover_image_path",
+        }
+    )
 
     df["publisher"] = df["publisher"].fillna("")
     df["description"] = df["description"].fillna("")
@@ -99,12 +101,20 @@ def seed_books(engine):
     df.loc[df["isbn13"] == "", "isbn13"] = None
 
     cols = [
-        "idx", "title", "author", "publisher", "publication_year",
-        "description", "book_file_path", "cover_image_path",
-        "average_rating", "ratings_count", "language_code", "isbn13"
+        "idx",
+        "title",
+        "author",
+        "publisher",
+        "publication_year",
+        "description",
+        "book_file_path",
+        "cover_image_path",
+        "average_rating",
+        "ratings_count",
+        "language_code",
+        "isbn13",
     ]
-    df[cols].to_sql("book_tb", engine, if_exists="append",
-                    index=False, chunksize=10000)
+    df[cols].to_sql("book_tb", engine, if_exists="append", index=False, chunksize=10000)
 
 
 def seed_tags(engine):
@@ -119,27 +129,30 @@ def seed_book_tags(engine):
     df = pd.read_csv(BOOK_TAGS_FILE)
     df = df.rename(columns={"book_id": "book_idx", "genre_id": "tag_idx"})
     df[["book_idx", "tag_idx"]].to_sql(
-        "book_tag_tb", engine, if_exists="append", index=False, chunksize=10000)
+        "book_tag_tb", engine, if_exists="append", index=False, chunksize=10000
+    )
 
 
 def seed_ratings(engine):
     print("[INFO] Seeding ratings...")
     df = pd.read_csv(RATINGS_FILE)
-    df = df.rename(columns={"user_id": "user_idx",
-                   "book_id": "book_idx", "rating": "rating"})
+    df = df.rename(
+        columns={"user_id": "user_idx", "book_id": "book_idx", "rating": "rating"}
+    )
 
-    valid_books = pd.read_sql("SELECT idx FROM book_tb", engine)[
-        "idx"].tolist()
+    valid_books = pd.read_sql("SELECT idx FROM book_tb", engine)["idx"].tolist()
     valid_books_set = set(valid_books)
     df = df[df["book_idx"].isin(valid_books_set)]
 
     df[["user_idx", "book_idx", "rating"]].to_sql(
-        "book_rating_tb", engine, if_exists="append", index=False, chunksize=20000)
+        "book_rating_tb", engine, if_exists="append", index=False, chunksize=20000
+    )
 
 
 # ===========================================================================
 # 2. 설문조사 데이터 시딩 함수
 # ===========================================================================
+
 
 def seed_survey_questions(engine):
     print("[INFO] Seeding survey questions...")
@@ -151,20 +164,28 @@ def seed_survey_options(engine):
     print("[INFO] Seeding survey options...")
 
     df_q = pd.read_sql(
-        "SELECT idx, content FROM survey_question_tb ORDER BY idx", engine)
+        "SELECT idx, content FROM survey_question_tb ORDER BY idx", engine
+    )
 
     if df_q.empty:
         print("[ERROR] No questions found! Skipping options.")
         return
 
     insert_rows = []
-    for i, options in enumerate(survey_options_list):
-        if i >= len(df_q):
-            break
-        qid = int(df_q.iloc[i]["idx"])
 
-        for opt in options:
-            insert_rows.append({"question_idx": qid, "content": opt})
+    q_idx_list = df_q["idx"].tolist()
+
+    for i, options in enumerate(survey_options_list):
+        if i >= len(q_idx_list):
+            break
+        qid = int(q_idx_list[i])
+
+        if i == 3:
+            for book_idx in options:
+                insert_rows.append({"question_idx": qid, "book_idx": book_idx})
+        else:
+            for opt_text in options:
+                insert_rows.append({"question_idx": qid, "content": opt_text})
 
     df = pd.DataFrame(insert_rows)
     df.to_sql("survey_option_tb", engine, if_exists="append", index=False)
@@ -174,14 +195,17 @@ def seed_survey_option_tags(engine):
     print("[INFO] Seeding survey option-tag mappings...")
 
     tags_df = pd.read_sql("SELECT idx, name FROM tag_tb", engine)
-    tag_map = {name.lower(): idx for idx, name in zip(
-        tags_df["idx"], tags_df["name"])}
+    tag_map = {name.lower(): idx for idx, name in zip(tags_df["idx"], tags_df["name"])}
 
     options_df = pd.read_sql(
-        "SELECT idx, content FROM survey_option_tb", engine)
+        "SELECT idx, content FROM survey_option_tb WHERE content is NOT NULL", engine
+    )
 
-    ALL_MAPPINGS = {**SURVEY_GENRE_MAPPING, **
-                    SURVEY_MOOD_MAPPING, **SURVEY_PURPOSE_MAPPING}
+    ALL_MAPPINGS = {
+        **SURVEY_GENRE_MAPPING,
+        **SURVEY_MOOD_MAPPING,
+        **SURVEY_PURPOSE_MAPPING,
+    }
 
     insert_rows = []
     for _, row in options_df.iterrows():
@@ -192,8 +216,7 @@ def seed_survey_option_tags(engine):
         for tag_name in target_tags:
             tag_id = tag_map.get(tag_name.lower())
             if tag_id:
-                insert_rows.append(
-                    {"option_idx": option_id, "tag_idx": tag_id})
+                insert_rows.append({"option_idx": option_id, "tag_idx": tag_id})
 
     if not insert_rows:
         print("[WARN] No mappings to insert!")
@@ -218,7 +241,11 @@ if __name__ == "__main__":
     # 1. 초기화 (설문 데이터만 초기화하려면 여기만 수정하세요!)
     with engine.connect() as conn:
         print("[INFO] Clearing existing data...")
-        conn.execute(text("TRUNCATE TABLE book_rating_tb, book_tag_tb, survey_option_tag_tb, survey_option_tb, survey_question_tb, tag_tb, book_tb, user_tb RESTART IDENTITY CASCADE;"))
+        conn.execute(
+            text(
+                "TRUNCATE TABLE book_rating_tb, book_tag_tb, survey_option_tag_tb, survey_option_tb, survey_question_tb, tag_tb, book_tb, user_tb RESTART IDENTITY CASCADE;"
+            )
+        )
         conn.commit()
 
     # 2. 기본 데이터
