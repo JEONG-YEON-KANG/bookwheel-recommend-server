@@ -3,17 +3,21 @@ import pandas as pd
 from sqlalchemy import create_engine
 from app.models.model_loader import lightfm_model
 from app.core.config import settings
-from app.core.constants import SURVEY_GENRE_MAPPING, SURVEY_MOOD_MAPPING, SURVEY_PURPOSE_MAPPING
+from app.core.constants import (
+    SURVEY_GENRE_MAPPING,
+    SURVEY_MOOD_MAPPING,
+    SURVEY_PURPOSE_MAPPING,
+)
 
 
-class RecommenderService:
+class RecommendService:
     def __init__(self):
         # 1. 모델 및 데이터 로드
         self.model = lightfm_model.model
         self.item_features = lightfm_model.item_features
 
         # 2. ID 매핑 로드
-        self.item_map = lightfm_model.item_id_map       # DB ID -> 내부 ID
+        self.item_map = lightfm_model.item_id_map  # DB ID -> 내부 ID
         self.rev_item_map = lightfm_model.rev_item_id_map  # 내부 ID -> DB ID
         self.user_map = lightfm_model.user_id_map
         self.rev_user_map = lightfm_model.rev_user_id_map
@@ -22,13 +26,14 @@ class RecommenderService:
         self.engine = create_engine(settings.DATABASE_URL)
 
         # 4. 아이템 벡터 미리 계산 (성능 최적화)
-        self.all_item_vectors = self.item_features.dot(
-            self.model.item_embeddings)
+        self.all_item_vectors = self.item_features.dot(self.model.item_embeddings)
 
     # ------------------------------------------------------------------
     # [Helper] 결과 포맷팅 및 필터링 공통 함수
     # ------------------------------------------------------------------
-    def _format_results(self, scores, k, exclude_indices=set(), id_map=None, key_name="book_idx"):
+    def _format_results(
+        self, scores, k, exclude_indices=set(), id_map=None, key_name="book_idx"
+    ):
         if id_map is None:
             id_map = self.rev_item_map
 
@@ -38,10 +43,7 @@ class RecommenderService:
             real_id = int(id_map[idx])
             if real_id in exclude_indices:
                 continue
-            results.append({
-                key_name: real_id,
-                "score": float(scores[idx])
-            })
+            results.append({key_name: real_id, "score": float(scores[idx])})
             if len(results) >= k:
                 break
         return results
@@ -77,10 +79,7 @@ class RecommenderService:
         scores = dot_products / (all_norms * target_norm + 1e-9)
 
         return self._format_results(
-            scores=scores,
-            k=k,
-            exclude_indices={book_idx},
-            key_name="book_idx"
+            scores=scores, k=k, exclude_indices={book_idx}, key_name="book_idx"
         )
 
     # ------------------------------------------------------------------
@@ -95,7 +94,7 @@ class RecommenderService:
         try:
             read_books_df = pd.read_sql(
                 f"SELECT book_idx FROM book_rating_tb WHERE user_idx = {user_idx} AND deleted_at IS NULL",
-                self.engine
+                self.engine,
             )
             read_book_set = set(read_books_df["book_idx"].tolist())
         except Exception as e:
@@ -105,14 +104,11 @@ class RecommenderService:
         scores = self.model.predict(
             user_ids=internal_user,
             item_ids=np.arange(n_items),
-            item_features=self.item_features
+            item_features=self.item_features,
         )
 
         return self._format_results(
-            scores=scores,
-            k=k,
-            exclude_indices=read_book_set,
-            key_name="book_idx"
+            scores=scores, k=k, exclude_indices=read_book_set, key_name="book_idx"
         )
 
     # ------------------------------------------------------------------
@@ -157,10 +153,7 @@ class RecommenderService:
 
         scores = self.all_item_vectors.dot(hybrid_vec)
         return self._format_results(
-            scores=scores,
-            k=k,
-            exclude_indices=exclude_set,
-            key_name="book_idx"
+            scores=scores, k=k, exclude_indices=exclude_set, key_name="book_idx"
         )
 
     # ------------------------------------------------------------------
@@ -185,7 +178,7 @@ class RecommenderService:
             k=k,
             exclude_indices={user_idx},
             id_map=self.rev_user_map,
-            key_name="user_idx"
+            key_name="user_idx",
         )
 
     # ------------------------------------------------------------------
@@ -197,7 +190,7 @@ class RecommenderService:
         mood_id_list: list[int],
         purpose_id_list: list[int],
         book_id_list: list[int],
-        k=10
+        k=10,
     ):
         """
         설문조사 ID 리스트를 받아 텍스트로 변환 후 추천 로직 수행
@@ -256,8 +249,7 @@ class RecommenderService:
                     exclude_books.add(bid)
 
             if valid_book_indices:
-                book_vec = self.all_item_vectors[valid_book_indices].mean(
-                    axis=0)
+                book_vec = self.all_item_vectors[valid_book_indices].mean(axis=0)
 
         # 5. 벡터 합성
         if np.all(tag_vec == 0) and np.all(book_vec == 0):
@@ -273,8 +265,5 @@ class RecommenderService:
         # 6. 결과 반환
         scores = self.all_item_vectors.dot(hybrid_vec)
         return self._format_results(
-            scores=scores,
-            k=k,
-            exclude_indices=exclude_books,
-            key_name="book_idx"
+            scores=scores, k=k, exclude_indices=exclude_books, key_name="book_idx"
         )
