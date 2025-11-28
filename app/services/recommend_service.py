@@ -221,7 +221,7 @@ class RecommendService:
             scores,
             k,
             exclude_indices={user_idx},
-            id_map=self.rev_user_map,
+            idx_map=self.rev_user_map,
             key_name="user_idx",
         )
 
@@ -232,7 +232,7 @@ class RecommendService:
         if user_idx not in self.user_map:
             return None
 
-        top_list = self.recommend_personal(user_idx, k=1)
+        top_list = self._recommend_personal(user_idx, k=1)
         return top_list[0] if top_list else None
 
     # -----------------------------------------------------------------
@@ -346,7 +346,7 @@ class RecommendService:
         purpose_list: list[int],
         book_idx_list: list[int],
     ):
-        result = self.recommend_initial(
+        result = self._recommend_initial(
             genre_list, mood_list, purpose_list, book_idx_list, k=1, exclude_indices=[]
         )
         return result[0] if result else None
@@ -516,30 +516,30 @@ class RecommendService:
         response = {}
 
         if warm:
-            top1 = self.recommend_personal_top1(user_idx)
+            top1 = self._recommend_personal_top1(user_idx)
             if top1:
                 exclude_set.add(top1["book_idx"])
             response["personal_top1"] = top1
 
-            personal10 = self.recommend_personal(
+            personal10 = self._recommend_personal(
                 user_idx, exclude_indices=list(exclude_set)
             )
             exclude_set.update([b["book_idx"] for b in personal10])
             response["personal_top10"] = personal10
 
             if recent_available:
-                recent10 = self.recommend_recent(user_idx)
+                recent10 = self._recommend_recent(user_idx)
                 exclude_set.update([b["book_idx"] for b in recent10])
                 response["recent_top10"] = recent10
         else:
-            top1 = self.recommend_initial_top1(
+            top1 = self._recommend_initial_top1(
                 genre_list, mood_list, purpose_list, book_idx_list
             )
             if top1:
                 exclude_set.add(top1["book_idx"])
             response["initial_top1"] = top1
 
-            initial10 = self.recommend_initial(
+            initial10 = self._recommend_initial(
                 genre_list,
                 mood_list,
                 purpose_list,
@@ -550,15 +550,15 @@ class RecommendService:
             response["initial_top10"] = initial10
 
             if recent_available:
-                recent10 = self.recommend_recent(user_idx)
+                recent10 = self._recommend_recent(user_idx)
                 exclude_set.update([b["book_idx"] for b in recent10])
                 response["recent_top10"] = recent10
 
-        popular10 = self.recommend_popular(exclude_indices=list(exclude_set))
+        popular10 = self._recommend_popular(exclude_indices=list(exclude_set))
         exclude_set.update([b["book_idx"] for b in popular10])
         response["popular_top10"] = popular10
 
-        genre_sections = self.recommend_genre(exclude_indices=list(exclude_set))
-        response["genre_sections"] = genre_sections
+        genre_section_list = self._recommend_genre(exclude_indices=list(exclude_set))
+        response["genre_section_list"] = genre_section_list
 
         return response
