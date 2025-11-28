@@ -1,12 +1,13 @@
 import numpy as np
 import pandas as pd
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from app.models.model_loader import lightfm_model
 from app.core.config import settings
 from app.core.constants import (
     SURVEY_GENRE_MAPPING,
     SURVEY_MOOD_MAPPING,
     SURVEY_PURPOSE_MAPPING,
+    GENRE_SECTION_ORDER,
 )
 
 
@@ -28,75 +29,234 @@ class RecommendService:
         # 4. 아이템 벡터 미리 계산 (성능 최적화)
         self.all_item_vectors = self.item_features.dot(self.model.item_embeddings)
 
-    # ------------------------------------------------------------------
+    # -----------------------------------------------------------------
     # [Helper] 결과 포맷팅 및 필터링 공통 함수
-    # ------------------------------------------------------------------
+    # 점수 벡터 -> 상위 k개 추출 + exclude 적용 + 내부 중복 제거
+    # exclude_indices: nestjs가 전달한 제외 대상
+    # -----------------------------------------------------------------
     def _format_results(
-        self, scores, k, exclude_indices=set(), id_map=None, key_name="book_idx"
+        self, scores, k, exclude_indices=set(), idx_map=None, key_name="book_idx"
     ):
-        if id_map is None:
-            id_map = self.rev_item_map
+        if idx_map is None:
+            idx_map = self.rev_item_map
 
-        ranked_indices = np.argsort(-scores)
+        ranked = np.argsort(-scores)  # 높은 점수 순으로 정렬
         results = []
-        for idx in ranked_indices:
-            real_id = int(id_map[idx])
-            if real_id in exclude_indices:
+        used_idx_list = set()  # 내부 중복 제거
+
+        for internal_idx in ranked:
+            real_idx = int(idx_map[internal_idx])
+
+            # 섹션 간 중복 제거
+            if real_idx in exclude_indices:
                 continue
-            results.append({key_name: real_id, "score": float(scores[idx])})
+
+            # 내부 중복 제거
+            if real_idx in used_idx_list:
+                continue
+
+            # 결과 추가
+            results.append({key_name: real_idx})
+
+            used_idx_list.add(real_idx)
+            exclude_indices.add(real_idx)
+
             if len(results) >= k:
                 break
+
         return results
 
-    # ------------------------------------------------------------------
-    # [Helper] 옵션 Idx 리스트 -> 옵션 텍스트 리스트 변환
-    # ------------------------------------------------------------------
+    # -----------------------------------------------------------------
+    # [Helper] 옵션 Idx 리스트 -> 옵션 텍스트 리스트 변환 (설문조사)
+    # 옵션 idx를 DB에서 조회하여 텍스트로 변환
+    # -----------------------------------------------------------------
     def _get_option_texts(self, option_idx_list: list[int]) -> list[str]:
         if not option_idx_list:
             return []
-        ids_str = ",".join(map(str, option_idx_list))
+
+        placeholders = ", ".join([f":id_{i}" for i in range(len(option_idx_list))])
+        params = {f"id_{i}": idx for i, idx in enumerate(option_idx_list)}
+
+        sql = text(
+            f"SELECT content FROM survey_option_tb WHERE idx IN ({placeholders})"
+        )
+
         try:
-            sql = f"SELECT content FROM survey_option_tb WHERE idx IN ({ids_str})"
-            df = pd.read_sql(sql, self.engine)
+            with self.engine.connect() as conn:
+                df = pd.read_sql(sql, conn, params=params)
+
             return df["content"].tolist()
         except Exception as e:
             print(f"Option Text SQL Error: {e}")
             return []
 
-    # ------------------------------------------------------------------
-    # 1. 책 -> 책 추천
-    # ------------------------------------------------------------------
-    def recommend_book_to_book(self, book_idx, k=10):
-        if book_idx not in self.item_map:
-            return []
+    # -----------------------------------------------------------------
+    # [Helper] 태그 이름 리스트 -> 벡터로 변환
+    # -----------------------------------------------------------------
+    def _get_tag_vector(self, tag_name_list: list[str]) -> np.ndarray:
+        if not tag_name_list:
+            return np.zeros(self.model.item_embeddings.shape[1])
 
-        internal_idx = self.item_map[book_idx]
-        target_vector = self.all_item_vectors[internal_idx]
+        lower_tag_list = [str(t).lower() for t in tag_name_list if t]
 
-        target_norm = np.linalg.norm(target_vector)
-        all_norms = np.linalg.norm(self.all_item_vectors, axis=1)
-        dot_products = self.all_item_vectors.dot(target_vector)
-        scores = dot_products / (all_norms * target_norm + 1e-9)
+        placeholders = ", ".join([f":tag_{i}" for i in range(len(lower_tag_list))])
+        params = {f"tag_{i}": tag for i, tag in enumerate(lower_tag_list)}
+        sql = text(
+            f"""
+            SELECT DISTINCT bt.book_idx
+            FROM tag_tb t JOIN book_tag_tb bt ON t.idx = bt.tag_idx
+            WHERE LOWER(t.name) IN ({placeholders})
+        """
+        )
+        try:
+            with self.engine.connect() as conn:
+                df = pd.read_sql(sql, conn, params=params)
 
-        return self._format_results(
-            scores=scores, k=k, exclude_indices={book_idx}, key_name="book_idx"
+            valid_indices = [
+                self.item_map[bidx]
+                for bidx in df["book_idx"].tolist()
+                if bidx in self.item_map
+            ]
+            if valid_indices:
+                return self.all_item_vectors[valid_indices].mean(axis=0)
+        except Exception as e:
+            print(f"Tag Vector SQL Error: {e}")
+        return np.zeros(self.model.item_embeddings.shape[1])
+
+    # -----------------------------------------------------------------
+    # [Helper] 코사인 유사도 기반 추천 점수 계산
+    # -----------------------------------------------------------------
+    def _compute_cosine_scores(self, target_vec: np.ndarray) -> np.ndarray:
+        if np.all((target_vec == 0)):
+            return np.zeros(self.all_item_vectors.shape[0])
+
+        item_norms = np.linalg.norm(self.all_item_vectors, axis=1)
+        target_norm = np.linalg.norm(target_vec)
+
+        denominator = item_norms * target_norm
+        denominator[denominator == 0] = 1e-9
+
+        scores = (self.all_item_vectors.dot(target_vec)) / denominator
+        return scores
+
+    # -----------------------------------------------------------------
+    # [Helper] cold 여부 + recent 추천 가능 여부 판단
+    # warm_user : rating_count >= 3
+    # recent_available : read_count >= 1
+    # -----------------------------------------------------------------
+    def _get_user_status(self, user_idx: int):
+        rating_count, read_count = 0, 0
+        progress_threshold = 0.2
+
+        rating_sql = text(
+            "SELECT COUNT(*) AS cnt FROM book_rating_tb WHERE user_idx = :user_idx AND deleted_at IS NULL"
+        )
+        progress_my_sql = text(
+            "SELECT COUNT(*) AS cnt FROM my_book_progress_tb WHERE user_idx = :user_idx AND progress >= :threshold"
+        )
+        progress_party_sql = text(
+            "SELECT COUNT(*) AS cnt FROM party_book_progress_tb WHERE user_idx = :user_idx AND progress >= :threshold"
         )
 
-    # ------------------------------------------------------------------
-    # 2. 유저 -> 책 추천
-    # ------------------------------------------------------------------
-    def recommend_books_for_user(self, user_idx, k=10):
+        params = {"user_idx": user_idx, "threshold": progress_threshold}
+
+        # -------------------------
+        # 1) rating count
+        # -------------------------
+        try:
+            df_rating = pd.read_sql(
+                rating_sql, self.engine, params={"user_idx": user_idx}
+            )
+
+            rating_count = int(df_rating["cnt"].iloc[0]) if not df_rating.empty else 0
+        except Exception as e:
+            print(f"Rating Count Query Error: {e}")
+
+        warm = rating_count >= 3
+
+        # -------------------------
+        # 2) 읽은 책 count (progress)
+        # my_book_progress_tb + party_book_progress_tb 통합
+        # progress >= 0.2 이상만 인정
+        # -------------------------
+        try:
+            df1 = pd.read_sql(progress_my_sql, self.engine, params=params)
+            read_count = int(df1["cnt"].iloc[0]) if not df1.empty else 0
+        except Exception as e:
+            print(f"My Book Progress Query Error: {e}")
+
+        try:
+            df2 = pd.read_sql(progress_party_sql, self.engine, params=params)
+            read_count += int(df2["cnt"].iloc[0]) if not df2.empty else 0
+        except Exception as e:
+            print(f"Party Book Progress Query Error: {e}")
+
+        recent_available = read_count >= 1
+        return warm, recent_available
+
+    # -----------------------------------------------------------------
+    # 유저 -> 유저 추천
+    # -----------------------------------------------------------------
+    def recommend_similar_user(self, user_idx: int, k: int = 10):
         if user_idx not in self.user_map:
             return []
 
         internal_user = self.user_map[user_idx]
-        read_book_set = set()
+        u_vecs = self.model.user_embeddings
+        target_vec = u_vecs[internal_user]
+
+        if np.all((target_vec == 0)):
+            return []
+
+        u_norms = np.linalg.norm(u_vecs, axis=1)
+        target_norm = np.linalg.norm(target_vec)
+
+        dot_products = u_vecs.dot(target_vec)
+        denominator = u_norms * target_norm
+        denominator[denominator == 0] = 1e-9
+
+        scores = dot_products / denominator
+
+        return self._format_results(
+            scores,
+            k,
+            exclude_indices={user_idx},
+            id_map=self.rev_user_map,
+            key_name="user_idx",
+        )
+
+    # -----------------------------------------------------------------
+    # 개인화 추천 top1
+    # -----------------------------------------------------------------
+    def _recommend_personal_top1(self, user_idx: int):
+        if user_idx not in self.user_map:
+            return None
+
+        top_list = self.recommend_personal(user_idx, k=1)
+        return top_list[0] if top_list else None
+
+    # -----------------------------------------------------------------
+    # 개인화 추천 top10
+    # -----------------------------------------------------------------
+    def _recommend_personal(
+        self,
+        user_idx: int,
+        k: int = 10,
+        exclude_indices: list[int] = [],
+    ):
+        if user_idx not in self.user_map:
+            return []
+
+        internal_user = self.user_map[user_idx]
+        exclude_set = set(exclude_indices)
+
+        sql = text(
+            "SELECT book_idx FROM book_rating_tb WHERE user_idx = :user_idx AND deleted_at IS NULL"
+        )
+
         try:
-            read_books_df = pd.read_sql(
-                f"SELECT book_idx FROM book_rating_tb WHERE user_idx = {user_idx} AND deleted_at IS NULL",
-                self.engine,
-            )
-            read_book_set = set(read_books_df["book_idx"].tolist())
+            read_books_df = pd.read_sql(sql, self.engine, params={"user_idx": user_idx})
+            exclude_set.update(read_books_df["book_idx"].tolist())
         except Exception as e:
             print(f"History Query Error: {e}")
 
@@ -107,151 +267,137 @@ class RecommendService:
             item_features=self.item_features,
         )
 
-        return self._format_results(
-            scores=scores, k=k, exclude_indices=read_book_set, key_name="book_idx"
-        )
+        return self._format_results(scores, k, exclude_indices=exclude_set)
 
-    # ------------------------------------------------------------------
-    # 3. 태그 (+책) -> 책 추천 (문자열 태그 기반)
-    # ------------------------------------------------------------------
-    def recommend_tag_book(self, book_idx=None, tag_list=[], k=10):
-        tag_vec = np.zeros(self.model.item_embeddings.shape[1])
-
-        if tag_list:
-            lower_tags = [str(t).lower() for t in tag_list]
-            escaped_tags = [t.replace("'", "''") for t in lower_tags]
-            quoted_tags = ",".join(f"'{t}'" for t in escaped_tags)
-
-            sql = f"""
-                SELECT DISTINCT bt.book_idx
-                FROM tag_tb t
-                JOIN book_tag_tb bt ON t.idx = bt.tag_idx
-                WHERE LOWER(t.name) IN ({quoted_tags})
-            """
-            try:
-                df = pd.read_sql(sql, self.engine)
-                valid_indices = [
-                    self.item_map[b] for b in df["book_idx"] if b in self.item_map
-                ]
-                if valid_indices:
-                    tag_vec = self.all_item_vectors[valid_indices].mean(axis=0)
-            except Exception as e:
-                print(f"Tag SQL Error: {e}")
-
-        book_vec = np.zeros(self.model.item_embeddings.shape[1])
-        exclude_set = set()
-
-        if book_idx is not None and book_idx in self.item_map:
-            book_vec = self.all_item_vectors[self.item_map[book_idx]]
-            hybrid_vec = 0.5 * tag_vec + 0.5 * book_vec
-            exclude_set.add(book_idx)
-        else:
-            hybrid_vec = tag_vec
-
-        if np.all(hybrid_vec == 0):
-            return []
-
-        scores = self.all_item_vectors.dot(hybrid_vec)
-        return self._format_results(
-            scores=scores, k=k, exclude_indices=exclude_set, key_name="book_idx"
-        )
-
-    # ------------------------------------------------------------------
-    # 4. 유저 -> 유저 추천
-    # ------------------------------------------------------------------
-    def recommend_user_to_user(self, user_idx, k=10):
-        if user_idx not in self.user_map:
-            return []
-
-        internal_user = self.user_map[user_idx]
-        u_vecs = self.model.user_embeddings
-        target_vec = u_vecs[internal_user]
-
-        u_norms = np.linalg.norm(u_vecs, axis=1)
-        target_norm = np.linalg.norm(target_vec)
-
-        dot_products = u_vecs.dot(target_vec)
-        scores = dot_products / (u_norms * target_norm + 1e-9)
-
-        return self._format_results(
-            scores=scores,
-            k=k,
-            exclude_indices={user_idx},
-            id_map=self.rev_user_map,
-            key_name="user_idx",
-        )
-
-    # ------------------------------------------------------------------
-    # 5. [NEW] 설문 기반 초기 추천 (ID 기반 - Cold Start)
-    # ------------------------------------------------------------------
-    def get_initial_recommendation(
-        self,
-        genre_id_list: list[int],
-        mood_id_list: list[int],
-        purpose_id_list: list[int],
-        book_id_list: list[int],
-        k=10,
+    # -----------------------------------------------------------------
+    # 유사 도서 추천
+    # -----------------------------------------------------------------
+    def recommend_similar_book(
+        self, book_idx: int, k: int = 10, exclude_indices: list[int] = None
     ):
+        if book_idx not in self.item_map:
+            return []
+
+        internal_idx = self.item_map[book_idx]
+        target_vector = self.all_item_vectors[internal_idx]
+
+        if exclude_indices is None:
+            exclude_set = {book_idx}
+        else:
+            exclude_set = set(exclude_indices)
+            exclude_set.add(book_idx)
+
+        scores = self._compute_cosine_scores(target_vector)
+
+        return self._format_results(scores, k, exclude_indices=exclude_set)
+
+    # -----------------------------------------------------------------
+    # 최근 읽은 책 기반 추천
+    # -----------------------------------------------------------------
+    def _recommend_recent(
+        self, user_idx: int, k: int = 10, exclude_indices: list[int] = []
+    ):
+        exclude_set = set(exclude_indices)
+
+        progress_threshold = 0.2
+
+        sql = text(
+            f"""
+            ( 
+                SELECT book_idx, updated_at
+                FROM my_book_progress_tb
+                WHERE user_idx = :user_idx AND progress >= :threshold)
+            UNION ALL
+            (
+                SELECT book_idx, updated_at
+                FROM party_book_progress_tb
+                WHERE user_idx = :user_idx AND progress >= :threshold
+            )
+            ORDER BY updated_at DESC
+            LIMIT 1
         """
-        설문조사 ID 리스트를 받아 텍스트로 변환 후 추천 로직 수행
-        """
-        # 1. ID -> 텍스트 변환
-        genre_list = self._get_option_texts(genre_id_list)
-        mood_list = self._get_option_texts(mood_id_list)
-        purpose_list = self._get_option_texts(purpose_id_list)
+        )
+
+        params = {"user_idx": user_idx, "threshold": progress_threshold}
+
+        try:
+            df = pd.read_sql(sql, self.engine, params=params)
+            if df.empty or "book_idx" not in df or pd.isna(df["book_idx"].iloc[0]):
+                return []
+
+            recent_book_idx = int(df["book_idx"].iloc[0])
+
+            exclude_set.add(recent_book_idx)
+
+            return self.recommend_similar_book(
+                recent_book_idx, k, exclude_indices=exclude_set
+            )
+        except Exception as e:
+            print(f"Recent Book Query Error: {e}")
+            return []
+
+    # -----------------------------------------------------------------
+    # 설문 기반 top1 추천
+    # -----------------------------------------------------------------
+    def _recommend_initial_top1(
+        self,
+        genre_list: list[int],
+        mood_list: list[int],
+        purpose_list: list[int],
+        book_idx_list: list[int],
+    ):
+        result = self.recommend_initial(
+            genre_list, mood_list, purpose_list, book_idx_list, k=1, exclude_indices=[]
+        )
+        return result[0] if result else None
+
+    # -----------------------------------------------------------------
+    # 설문 기반 top10 추천
+    # -----------------------------------------------------------------
+    def _recommend_initial(
+        self,
+        genre_list: list[int],
+        mood_list: list[int],
+        purpose_list: list[int],
+        book_idx_list: list[int],
+        k: int = 10,
+        exclude_indices: list[int] = [],
+    ):
+        exclude_set = set(exclude_indices)
+
+        # 1. Idx -> 텍스트 변환
+        genre_list = self._get_option_texts(genre_list)
+        mood_list = self._get_option_texts(mood_list)
+        purpose_list = self._get_option_texts(purpose_list)
 
         # 2. 텍스트 -> 검색할 실제 태그 이름 수집 (매핑 활용)
-        target_tag_names = set()
+        tag_name_list = set()
 
         for g in genre_list:
             if g in SURVEY_GENRE_MAPPING:
-                target_tag_names.update(SURVEY_GENRE_MAPPING[g])
+                tag_name_list.update(SURVEY_GENRE_MAPPING.get(g, []))
         for m in mood_list:
             if m in SURVEY_MOOD_MAPPING:
-                target_tag_names.update(SURVEY_MOOD_MAPPING[m])
+                tag_name_list.update(SURVEY_MOOD_MAPPING.get(m, []))
         for p in purpose_list:
             if p in SURVEY_PURPOSE_MAPPING:
-                target_tag_names.update(SURVEY_PURPOSE_MAPPING[p])
+                tag_name_list.update(SURVEY_PURPOSE_MAPPING.get(p, []))
 
-        target_tag_names = list(target_tag_names)
+        # 태그 벡터 계산
+        tag_vec = self._get_tag_vector(list(tag_name_list))
 
-        # 3. 태그 벡터 계산
-        tag_vec = np.zeros(self.model.item_embeddings.shape[1])
-        if target_tag_names:
-            escaped_tags = [t.replace("'", "''") for t in target_tag_names]
-            quoted_tags = ",".join(f"'{t.lower()}'" for t in escaped_tags)
-
-            try:
-                sql = f"""
-                    SELECT DISTINCT bt.book_idx 
-                    FROM tag_tb t 
-                    JOIN book_tag_tb bt ON t.idx = bt.tag_idx 
-                    WHERE LOWER(t.name) IN ({quoted_tags})
-                """
-                df = pd.read_sql(sql, self.engine)
-                valid_indices = [
-                    self.item_map[b] for b in df["book_idx"] if b in self.item_map
-                ]
-                if valid_indices:
-                    tag_vec = self.all_item_vectors[valid_indices].mean(axis=0)
-            except Exception as e:
-                print(f"Init Tag SQL Error: {e}")
-
-        # 4. 책 벡터 계산
+        # 사용자가 선택한 책 벡터 평균
         book_vec = np.zeros(self.model.item_embeddings.shape[1])
-        exclude_books = set()
 
-        if book_id_list:
-            valid_book_indices = []
-            for bid in book_id_list:
-                if bid in self.item_map:
-                    valid_book_indices.append(self.item_map[bid])
-                    exclude_books.add(bid)
+        if book_idx_list:
+            internal_idx_list = [
+                self.item_map[b] for b in book_idx_list if b in self.item_map
+            ]
+            if internal_idx_list:
+                book_vec = self.all_item_vectors[internal_idx_list].mean(axis=0)
 
-            if valid_book_indices:
-                book_vec = self.all_item_vectors[valid_book_indices].mean(axis=0)
+            exclude_set.update(book_idx_list)
 
-        # 5. 벡터 합성
         if np.all(tag_vec == 0) and np.all(book_vec == 0):
             return []
 
@@ -260,10 +406,159 @@ class RecommendService:
         elif np.all(book_vec == 0):
             hybrid_vec = tag_vec
         else:
-            hybrid_vec = 0.5 * tag_vec + 0.5 * book_vec
+            hybrid_vec = 0.4 * tag_vec + 0.6 * book_vec
 
-        # 6. 결과 반환
-        scores = self.all_item_vectors.dot(hybrid_vec)
-        return self._format_results(
-            scores=scores, k=k, exclude_indices=exclude_books, key_name="book_idx"
-        )
+        scores = self._compute_cosine_scores(hybrid_vec)
+
+        return self._format_results(scores, k, exclude_indices=exclude_set)
+
+    # -----------------------------------------------------------------
+    # 인기 top10 추천
+    # -----------------------------------------------------------------
+    def _recommend_popular(self, exclude_indices: list[int] = []):
+        k = 10
+
+        exclude_set = set(exclude_indices)
+
+        sql = """
+            SELECT 
+                b.idx AS book_idx,
+                COUNT(r.rating) AS rating_count,
+                AVG(r.rating) AS avg_rating
+            FROM book_tb b
+            JOIN book_rating_tb r ON b.idx = r.book_idx
+            WHERE r.deleted_at IS NULL
+            GROUP BY b.idx
+            HAVING COUNT(r.rating) >= 3
+            ORDER BY rating_count DESC, avg_rating DESC
+        """
+
+        try:
+            df = pd.read_sql(sql, self.engine)
+        except Exception as e:
+            print(f"Popular Books Query Error: {e}")
+            return []
+
+        results, used = [], set()
+
+        for _, row in df.iterrows():
+            bidx = int(row["book_idx"])
+
+            if bidx in exclude_set or bidx in used:
+                continue
+
+            scores = float(row["rating_count"]) * float(row["avg_rating"])
+            results.append({"book_idx": bidx, "score": scores})
+
+            used.add(bidx)
+            exclude_set.add(bidx)
+
+            if len(results) >= k:
+                break
+
+        return results
+
+    # -----------------------------------------------------------------
+    # 장르별 top10 추천
+    # -----------------------------------------------------------------
+    def _recommend_single_genre(self, genre_name: str, exclude_indices: list[int] = []):
+        k = 10
+        exclude_set = set(exclude_indices)
+
+        if genre_name not in SURVEY_GENRE_MAPPING:
+            return []
+
+        tag_list = SURVEY_GENRE_MAPPING[genre_name]
+
+        tag_vec = self._get_tag_vector(tag_list)
+        if np.all(tag_vec == 0):
+            return []
+
+        scores = self._compute_cosine_scores(tag_vec)
+
+        return self._format_results(scores, k, exclude_indices=exclude_set)
+
+    # -----------------------------------------------------------------
+    # 전체 장르 섹션
+    # -----------------------------------------------------------------
+    def _recommend_genre(self, exclude_indices: list[int] = []):
+        exclude_set = set(exclude_indices)
+        section_list = []
+
+        for genre in GENRE_SECTION_ORDER:
+            book_list = self._recommend_single_genre(genre, exclude_set)
+            exclude_set.update([b["book_idx"] for b in book_list])
+
+            section_list.append({"genre": genre, "book_list": book_list})
+
+        return section_list
+
+    # -----------------------------------------------------------------
+    # 메인 home 추천 함수
+    # section 구성 규칙
+    # warm + recent -> personal + recent + popular + genre
+    # warm + !recent -> personal + popular + genre
+    # cold + recent -> initial + recent + popular + genre
+    # cold + !recent -> initial + popular + genre
+    # -----------------------------------------------------------------
+    def get_home_recommend(
+        self,
+        user_idx: int,
+        genre_list: list[int],
+        mood_list: list[int],
+        purpose_list: list[int],
+        book_idx_list: list[int],
+    ):
+        warm, recent_available = self._get_user_status(user_idx)
+
+        exclude_set = set()
+
+        response = {}
+
+        if warm:
+            top1 = self.recommend_personal_top1(user_idx)
+            if top1:
+                exclude_set.add(top1["book_idx"])
+            response["personal_top1"] = top1
+
+            personal10 = self.recommend_personal(
+                user_idx, exclude_indices=list(exclude_set)
+            )
+            exclude_set.update([b["book_idx"] for b in personal10])
+            response["personal_top10"] = personal10
+
+            if recent_available:
+                recent10 = self.recommend_recent(user_idx)
+                exclude_set.update([b["book_idx"] for b in recent10])
+                response["recent_top10"] = recent10
+        else:
+            top1 = self.recommend_initial_top1(
+                genre_list, mood_list, purpose_list, book_idx_list
+            )
+            if top1:
+                exclude_set.add(top1["book_idx"])
+            response["initial_top1"] = top1
+
+            initial10 = self.recommend_initial(
+                genre_list,
+                mood_list,
+                purpose_list,
+                book_idx_list,
+                exclude_indices=list(exclude_set),
+            )
+            exclude_set.update([b["book_idx"] for b in initial10])
+            response["initial_top10"] = initial10
+
+            if recent_available:
+                recent10 = self.recommend_recent(user_idx)
+                exclude_set.update([b["book_idx"] for b in recent10])
+                response["recent_top10"] = recent10
+
+        popular10 = self.recommend_popular(exclude_indices=list(exclude_set))
+        exclude_set.update([b["book_idx"] for b in popular10])
+        response["popular_top10"] = popular10
+
+        genre_sections = self.recommend_genre(exclude_indices=list(exclude_set))
+        response["genre_sections"] = genre_sections
+
+        return response
