@@ -8,6 +8,7 @@ from sqlalchemy import create_engine, text
 import os
 import sys
 from dotenv import load_dotenv
+import numpy as np
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(current_dir)
@@ -226,6 +227,31 @@ def seed_survey_option_tags(engine):
     df.to_sql("survey_option_tag_tb", engine, if_exists="append", index=False)
 
 
+def seed_recent_users(engine, start_user=1, end_user=20):
+    book_df = pd.read_sql("SELECT idx FROM book_tb", engine)
+    book_idx_list = book_df["idx"].tolist()
+
+    rows = []
+
+    for user_idx in range(start_user, end_user + 1):
+
+        book_idx = int(np.random.choice(book_idx_list))
+        progress_val = float(np.random.uniform(0.3, 0.8))
+
+        rows.append(
+            {
+                "user_idx": user_idx,
+                "book_idx": book_idx,
+                "progress": progress_val,
+                "current_cfi_position": "/6/2[chapter1]!/4/12",
+                "updated_at": pd.Timestamp.utcnow(),
+            }
+        )
+
+    df = pd.DataFrame(rows)
+    df.to_sql("my_book_progress_tb", engine, if_exists="append", index=False)
+
+
 # ===========================================================================
 # 3. 메인 실행
 # ===========================================================================
@@ -264,5 +290,7 @@ if __name__ == "__main__":
     seed_survey_questions(engine)
     seed_survey_options(engine)
     seed_survey_option_tags(engine)
+
+    seed_recent_users(engine, 1, 20)
 
     print("\n All Done! Database seeding completed successfully.\n")
