@@ -302,17 +302,22 @@ class RecommendService:
         progress_threshold = 0.2
 
         sql = text(
-            f"""
-            ( 
+            """
+            SELECT book_idx, updated_at
+            FROM (
                 SELECT book_idx, updated_at
                 FROM my_book_progress_tb
-                WHERE user_idx = :user_idx AND progress >= :threshold)
-            UNION ALL
-            (
-                SELECT book_idx, updated_at
-                FROM party_book_progress_tb
                 WHERE user_idx = :user_idx AND progress >= :threshold
-            )
+
+                UNION ALL
+
+                SELECT p.book_idx as book_idx,
+                pbp.updated_at
+                FROM party_book_progress_tb AS pbp
+                JOIN party_tb AS p
+                    ON pbp.party_idx = p.idx
+                WHERE pbp.user_idx = :user_idx AND pbp.progress >= :threshold
+            ) AS combined
             ORDER BY updated_at DESC
             LIMIT 1
         """
