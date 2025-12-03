@@ -55,7 +55,7 @@ if not DATABASE_URL:
 engine = create_engine(DATABASE_URL)
 
 # --- 파일 경로 설정 ---
-CSV_DIR = os.path.join(project_root, "goodbooks-10k")
+CSV_DIR = os.path.join(project_root, "dataset")
 
 RATINGS_FILE = os.path.join(CSV_DIR, "ratings.csv")
 BOOKS_FILE = os.path.join(CSV_DIR, "books.csv")
