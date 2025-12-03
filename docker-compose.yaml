@@ -1,36 +1,22 @@
-version: "3.9"
-
 services:
   recommend-dev:
     build: .
     container_name: recommend-dev
     volumes:
-      - .:/app # 소스 코드 전체
-      - model_volume:/app/models # 모델 파일 공유
+      - .:/app
+      - model_volume:/app/models
     networks:
-      - bookwheel-recommend-network
+      - bookwheel-network
     depends_on:
-      - postgres
-    stdin_open: true
-    tty: true
-
-  postgres:
-    image: postgres:15.4
-    container_name: bookwheel-recommend-postgres
+      - bookwheel-postgres
+    env_file:
+      - .env
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: 1234
-    ports:
-      - "5433:5432"
-    volumes:
-      - bookwheel-recommend-postgres-data:/var/lib/postgresql/data
-      - .:/app # ❗ Postgres도 /app을 볼 수 있게 함 → ddl.sql 접근 가능
-    networks:
-      - bookwheel-recommend-network
-
-volumes:
-  bookwheel-recommend-postgres-data:
-  model_volume:
+      - DATABASE_URL=${DATABASE_URL}
 
 networks:
-  bookwheel-recommend-network:
+  bookwheel-network:
+    external: true
+
+volumes:
+  model_volume:

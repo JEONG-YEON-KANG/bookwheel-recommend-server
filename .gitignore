@@ -3,6 +3,7 @@
 # ===========================
 .env
 .env.local
+.env.server
 .venv/
 venv/
 env/
