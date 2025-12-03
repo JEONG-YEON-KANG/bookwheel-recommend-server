@@ -5,12 +5,11 @@ services:
     volumes:
       - .:/app
       - model_volume:/app/models
-    networks:
-      - bookwheel-network
     environment:
       - DATABASE_URL=postgresql://postgres:1234@bookwheel-postgres:5432/bookwheel
-    depends_on:
-      - bookwheel-postgres
+    networks:
+      - bookwheel-network
+    # depends_on 제거! (bookwheel-postgres는 이 compose 안에 없음)
 
 networks:
   bookwheel-network:
