@@ -21,7 +21,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: 1234
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - bookwheel-recommend-postgres-data:/var/lib/postgresql/data
       - .:/app # ❗ Postgres도 /app을 볼 수 있게 함 → ddl.sql 접근 가능
