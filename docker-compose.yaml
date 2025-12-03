@@ -7,12 +7,10 @@ services:
       - model_volume:/app/models
     networks:
       - bookwheel-network
+    environment:
+      - DATABASE_URL=postgresql://postgres:1234@bookwheel-postgres:5432/bookwheel
     depends_on:
       - bookwheel-postgres
-    env_file:
-      - .env
-    environment:
-      - DATABASE_URL=${DATABASE_URL}
 
 networks:
   bookwheel-network:
