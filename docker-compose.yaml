@@ -1,3 +1,5 @@
+version: "3.9"
+
 services:
   recommend-dev:
     build: .
@@ -6,14 +8,14 @@ services:
       - .:/app
       - model_volume:/app/models
     environment:
-      - DATABASE_URL=postgresql://postgres:1234@bookwheel-postgres:5432/bookwheel
+      - DATABASE_URL=${DATABASE_URL}
     networks:
       - bookwheel-network
-    # depends_on 제거! (bookwheel-postgres는 이 compose 안에 없음)
+
+volumes:
+  model_volume:
 
 networks:
   bookwheel-network:
     external: true
-
-volumes:
-  model_volume:
+    name: bookwheel-backend_bookwheel-network
