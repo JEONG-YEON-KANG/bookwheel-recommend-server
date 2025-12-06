@@ -79,7 +79,7 @@ CREATE TABLE "book_highlight_tb" (
   "user_idx"   INTEGER      NOT NULL,
   "book_idx"   INTEGER      NOT NULL,
   "cfi_range"  TEXT         NOT NULL,
-  "content".   TEXT         NOT NULL,
+  "content"   TEXT         NOT NULL,
   "color_code" VARCHAR(10)  NOT NULL,
   "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "deleted_at" TIMESTAMP(3),
