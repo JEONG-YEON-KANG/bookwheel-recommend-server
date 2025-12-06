@@ -13,3 +13,4 @@ apscheduler
 tqdm
 matplotlib
 seaborn
+bcrypt

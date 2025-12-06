@@ -1,5 +1,8 @@
 # ======================================================================
-#  BookWheel SEED SCRIPT
+#  BookWheel SEED SCRIPT (Final Version)
+#  - bcrypt password hashing for demo users
+#  - stable user generation (demo users preserved)
+#  - survey insertion fully fixed
 # ======================================================================
 
 from app.core.constants import (
@@ -15,9 +18,10 @@ from dotenv import load_dotenv
 import numpy as np
 from datetime import datetime, timedelta, timezone
 import random
+import bcrypt
 
 # ----------------------------------------------------------------------
-# 경로 설정
+# 경로 & 환경 설정
 # ----------------------------------------------------------------------
 current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(current_dir)
@@ -36,9 +40,11 @@ RATINGS_FILE = os.path.join(CSV_DIR, "ratings.csv")
 TAGS_FILE = os.path.join(CSV_DIR, "tags.csv")
 BOOK_TAGS_FILE = os.path.join(CSV_DIR, "book_tags.csv")
 
+DEMO_USERS = [602, 415, 1278]
+
 
 # ----------------------------------------------------------------------
-# 유틸
+# Utils
 # ----------------------------------------------------------------------
 def now_ts():
     return datetime.now(timezone.utc)
@@ -61,30 +67,15 @@ def random_datetime_within(days=7):
     return now - delta
 
 
-# ----------------------------------------------------------------------
-# 설문 구성
-# ----------------------------------------------------------------------
-survey_questions = [
-    "주로 어떤 내용의 책에 손이 가시나요?",
-    "책을 통해 어떤 기분을 느끼고 싶으신가요?",
-    "책을 통해 주로 무엇을 얻고 싶으신가요?",
-    "최근에 감명 깊게 읽은 책은 무엇인가요?",
-]
-
-SURVEY_BOOK_IDX_LIST = [2, 9, 4, 10, 15, 374]
-
-survey_options_list = [
-    list(SURVEY_GENRE_MAPPING.keys()),
-    list(SURVEY_MOOD_MAPPING.keys()),
-    list(SURVEY_PURPOSE_MAPPING.keys()),
-    SURVEY_BOOK_IDX_LIST,
-]
-
-DEMO_USERS = [602, 415, 1278]
+# bcrypt hashing (백엔드와 완전 동일한 형태)
+def hash_password_raw(password: str) -> str:
+    salt = bcrypt.gensalt()
+    hashed = bcrypt.hashpw(password.encode("utf-8"), salt)
+    return hashed.decode("utf-8")
 
 
 # ======================================================================
-# 1. TRUNCATE (DDL 기반 전체 초기화)
+# 1. TRUNCATE ALL TABLES
 # ======================================================================
 def reset_database(engine):
     print("[RESET] Truncating all tables...")
@@ -122,14 +113,28 @@ def reset_database(engine):
 
 
 # ======================================================================
-# 2. 기본 데이터 삽입
+# 2. USER SEEDING
 # ======================================================================
-def seed_fake_users(engine, max_user_idx):
+def seed_users(engine, max_user_idx):
     print("[SEED] Users...")
 
-    # ---------------------------------------
-    # 1) 데모 유저 정의
-    # ---------------------------------------
+    # 1) Normal users 자동 생성
+    normal_user_ids = set(range(1, max_user_idx + 1)) - set(DEMO_USERS)
+
+    normal_users = pd.DataFrame(
+        {
+            "idx": list(normal_user_ids),
+            "nickname": [f"user_{i}" for i in normal_user_ids],
+            "profile_image_path": [None] * len(normal_user_ids),
+            "type": ["BASIC"] * len(normal_user_ids),
+            "age": [random.randint(18, 40) for _ in normal_user_ids],
+            "gender": [random.choice(["M", "F"]) for _ in normal_user_ids],
+            "created_at": [now_ts()] * len(normal_user_ids),
+            "deleted_at": [None] * len(normal_user_ids),
+        }
+    )
+
+    # 2) Demo users (지정된 idx 그대로)
     demo_users = pd.DataFrame(
         [
             {
@@ -165,79 +170,44 @@ def seed_fake_users(engine, max_user_idx):
         ]
     )
 
+    all_users = pd.concat([demo_users, normal_users], ignore_index=True)
+    all_users.to_sql("user_tb", engine, if_exists="append", index=False)
+
+    # 3) Demo user login credential
     demo_basic = pd.DataFrame(
         [
             {
                 "user_idx": 602,
                 "id": "demo602",
-                "password": "test1234!",
+                "password": hash_password_raw("test1234!"),
                 "email": "demo602@bookwheel.com",
             },
             {
                 "user_idx": 415,
                 "id": "demo415",
-                "password": "test1234!",
+                "password": hash_password_raw("test1234!"),
                 "email": "demo415@bookwheel.com",
             },
             {
                 "user_idx": 1278,
                 "id": "demo1278",
-                "password": "test1234!",
+                "password": hash_password_raw("test1234!"),
                 "email": "demo1278@bookwheel.com",
             },
         ]
     )
 
-    # ---------------------------------------
-    # 2) 일반 유저 idx 생성 (데모 유저 제외)
-    # ---------------------------------------
-    all_possible_ids = range(1, max_user_idx + 1)
-
-    normal_ids = [i for i in all_possible_ids if i not in DEMO_USERS]
-
-    normal_users = pd.DataFrame(
-        {
-            "idx": normal_ids,
-            "nickname": [f"user_{i}" for i in normal_ids],
-            "profile_image_path": [None] * len(normal_ids),
-            "type": ["BASIC"] * len(normal_ids),
-            "age": [random.randint(18, 40) for _ in normal_ids],
-            "gender": [random.choice(["M", "F"]) for _ in normal_ids],
-            "created_at": [now_ts()] * len(normal_ids),
-            "deleted_at": [None] * len(normal_ids),
-        }
-    )
-
-    # ---------------------------------------
-    # 3) DB 저장
-    # ---------------------------------------
-    # 1) 일반 유저 먼저
-    normal_users.to_sql("user_tb", engine, if_exists="append", index=False)
-
-    # 2) 데모 유저
-    demo_users.to_sql("user_tb", engine, if_exists="append", index=False)
     demo_basic.to_sql("user_basic_tb", engine, if_exists="append", index=False)
 
-    print(f"[OK] Normal users: {len(normal_users)}  Demo users: 3")
-
-    # ---------------------------------------
-    # 4) 마지막으로 sequence 위치를 MAX(idx)+1
-    # ---------------------------------------
-    with engine.connect() as conn:
-        conn.execute(
-            text(
-                """
-            SELECT setval('user_tb_idx_seq', (SELECT MAX(idx) FROM user_tb) + 1);
-        """
-            )
-        )
-        conn.commit()
+    print(f"[OK] Normal: {len(normal_users)}  Demo: {len(demo_users)} users inserted.")
 
 
+# ======================================================================
+# 3. BOOKS / TAGS / BOOK TAG / RATINGS
+# ======================================================================
 def seed_books(engine):
     print("[SEED] Books...")
     df = pd.read_csv(BOOKS_FILE)
-
     df = df.rename(
         columns={
             "book_id": "idx",
@@ -308,12 +278,30 @@ def seed_ratings(engine):
 
 
 # ======================================================================
-# 3. Survey
+# 4. SURVEY
 # ======================================================================
+survey_questions = [
+    "주로 어떤 내용의 책에 손이 가시나요?",
+    "책을 통해 어떤 기분을 느끼고 싶으신가요?",
+    "책을 통해 주로 무엇을 얻고 싶으신가요?",
+    "최근에 감명 깊게 읽은 책은 무엇인가요?",
+]
+
+SURVEY_BOOK_IDX_LIST = [2, 9, 4, 10, 15, 374]
+
+survey_options_list = [
+    list(SURVEY_GENRE_MAPPING.keys()),
+    list(SURVEY_MOOD_MAPPING.keys()),
+    list(SURVEY_PURPOSE_MAPPING.keys()),
+    SURVEY_BOOK_IDX_LIST,
+]
+
+
 def seed_survey_questions(engine):
     print("[SEED] Survey Questions...")
-    df = pd.DataFrame({"content": survey_questions})
-    df.to_sql("survey_question_tb", engine, if_exists="append", index=False)
+    pd.DataFrame({"content": survey_questions}).to_sql(
+        "survey_question_tb", engine, if_exists="append", index=False
+    )
 
 
 def seed_survey_options(engine):
@@ -322,26 +310,24 @@ def seed_survey_options(engine):
     q_df = pd.read_sql("SELECT idx FROM survey_question_tb ORDER BY idx", engine)
     qids = q_df["idx"].tolist()
 
-    insert_rows = []
+    rows = []
 
     for i, options in enumerate(survey_options_list):
         qid = qids[i]
-
-        if i == 3:  # book choices
+        if i == 3:  # 책 질문
             for book_idx in options:
-                insert_rows.append({"question_idx": qid, "book_idx": book_idx})
+                rows.append({"question_idx": qid, "book_idx": book_idx})
         else:
-            for opt_text in options:
-                insert_rows.append({"question_idx": qid, "content": opt_text})
+            for opt in options:
+                rows.append({"question_idx": qid, "content": opt})
 
-    pd.DataFrame(insert_rows).to_sql(
+    pd.DataFrame(rows).to_sql(
         "survey_option_tb", engine, if_exists="append", index=False
     )
 
 
 def seed_survey_option_tags(engine):
     print("[SEED] Survey Option Tags...")
-
     tags_df = pd.read_sql("SELECT idx, name FROM tag_tb", engine)
     tag_map = {name.lower(): idx for idx, name in zip(tags_df["idx"], tags_df["name"])}
 
@@ -404,7 +390,7 @@ def seed_demo_survey_responses(engine):
 
 
 # ======================================================================
-# 4. Demo User Activity
+# 5. DEMO USER ACTIVITY
 # ======================================================================
 def seed_demo_recent_progress(engine):
     print("[SEED] Demo Recent Reading Progress...")
@@ -424,7 +410,6 @@ def seed_demo_recent_progress(engine):
             timedelta(hours=random.randint(4, 12)),
             timedelta(days=random.randint(1, 3)),
         ]
-
         for i, b in enumerate(book_list):
             rows.append(
                 {
@@ -442,8 +427,7 @@ def seed_demo_recent_progress(engine):
 
 
 def seed_reviews(engine):
-    print("[SEED] Demo BookReviews...")
-
+    print("[SEED] Demo Reviews...")
     sample_reviews = [
         "정말 감명 깊게 읽은 책입니다. 추천!",
         "스토리가 흥미진진하고 캐릭터가 좋아요.",
@@ -457,7 +441,6 @@ def seed_reviews(engine):
         df = pd.read_sql(
             f"SELECT book_idx FROM my_book_progress_tb WHERE user_idx={u}", engine
         )
-
         for b in df["book_idx"].tolist()[:2]:
             rows.append(
                 {
@@ -476,7 +459,6 @@ def seed_reviews(engine):
 
 def seed_demo_friends(engine):
     print("[SEED] Demo Friends...")
-
     rows = [
         {
             "request_user_idx": 602,
@@ -491,13 +473,11 @@ def seed_demo_friends(engine):
             "created_at": now_ts(),
         },
     ]
-
     pd.DataFrame(rows).to_sql("friend_tb", engine, if_exists="append", index=False)
 
 
 def seed_demo_messages(engine):
     print("[SEED] Demo Messages...")
-
     messages = ["이 책 읽어봤어?", "추천 고마워!", "재밌더라", "읽어볼게!"]
     pairs = [(602, 415), (415, 1278), (602, 1278)]
 
@@ -519,7 +499,6 @@ def seed_demo_messages(engine):
 
 def seed_demo_parties(engine):
     print("[SEED] Demo Parties...")
-
     popular_books = pd.read_sql(
         "SELECT idx FROM book_tb ORDER BY ratings_count DESC LIMIT 30", engine
     )["idx"].tolist()
@@ -580,7 +559,7 @@ def seed_demo_parties(engine):
 
 
 # ======================================================================
-# MAIN
+# MAIN EXECUTION
 # ======================================================================
 if __name__ == "__main__":
     print("\n BookWheel Database Seeding Started...\n")
@@ -597,7 +576,7 @@ if __name__ == "__main__":
     except Exception:
         max_user_idx = 500
 
-    seed_fake_users(engine, max_user_idx)
+    seed_users(engine, max_user_idx)
     seed_books(engine)
     seed_tags(engine)
     seed_book_tags(engine)
