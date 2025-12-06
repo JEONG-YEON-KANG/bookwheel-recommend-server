@@ -127,7 +127,9 @@ def reset_database(engine):
 def seed_fake_users(engine, max_user_idx):
     print("[SEED] Users...")
 
-    # Demo users
+    # ---------------------------------------
+    # 1) 데모 유저 정의
+    # ---------------------------------------
     demo_users = pd.DataFrame(
         [
             {
@@ -186,27 +188,50 @@ def seed_fake_users(engine, max_user_idx):
         ]
     )
 
-    # Normal users
+    # ---------------------------------------
+    # 2) 일반 유저 idx 생성 (데모 유저 제외)
+    # ---------------------------------------
+    all_possible_ids = range(1, max_user_idx + 1)
+
+    normal_ids = [i for i in all_possible_ids if i not in DEMO_USERS]
+
     normal_users = pd.DataFrame(
         {
-            "idx": list(range(1, max_user_idx + 1)),
-            "nickname": [f"user_{i}" for i in range(1, max_user_idx + 1)],
-            "profile_image_path": [None] * max_user_idx,
-            "type": ["BASIC"] * max_user_idx,
-            "age": [random.randint(18, 40) for _ in range(max_user_idx)],
-            "gender": [random.choice(["M", "F"]) for _ in range(max_user_idx)],
-            "created_at": [now_ts()] * max_user_idx,
-            "deleted_at": [None] * max_user_idx,
+            "idx": normal_ids,
+            "nickname": [f"user_{i}" for i in normal_ids],
+            "profile_image_path": [None] * len(normal_ids),
+            "type": ["BASIC"] * len(normal_ids),
+            "age": [random.randint(18, 40) for _ in normal_ids],
+            "gender": [random.choice(["M", "F"]) for _ in normal_ids],
+            "created_at": [now_ts()] * len(normal_ids),
+            "deleted_at": [None] * len(normal_ids),
         }
     )
 
-    normal_users = normal_users[~normal_users["idx"].isin(DEMO_USERS)]
+    # ---------------------------------------
+    # 3) DB 저장
+    # ---------------------------------------
+    # 1) 일반 유저 먼저
+    normal_users.to_sql("user_tb", engine, if_exists="append", index=False)
 
-    all_users = pd.concat([demo_users, normal_users], ignore_index=True)
-    all_users.to_sql("user_tb", engine, if_exists="append", index=False)
+    # 2) 데모 유저
+    demo_users.to_sql("user_tb", engine, if_exists="append", index=False)
     demo_basic.to_sql("user_basic_tb", engine, if_exists="append", index=False)
 
-    print(f"[OK] {len(all_users)} users inserted.")
+    print(f"[OK] Normal users: {len(normal_users)}  Demo users: 3")
+
+    # ---------------------------------------
+    # 4) 마지막으로 sequence 위치를 MAX(idx)+1
+    # ---------------------------------------
+    with engine.connect() as conn:
+        conn.execute(
+            text(
+                """
+            SELECT setval('user_tb_idx_seq', (SELECT MAX(idx) FROM user_tb) + 1);
+        """
+            )
+        )
+        conn.commit()
 
 
 def seed_books(engine):
