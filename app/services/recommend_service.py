@@ -579,6 +579,8 @@ class RecommendService:
                 recent10 = self._recommend_recent(user_idx)
                 exclude_set.update([b["book_idx"] for b in recent10])
                 response["recent_top10"] = recent10
+            else:
+                response["recent_top10"] = []
         else:
             top1 = self._recommend_initial_top1(
                 genre_list, mood_list, purpose_list, book_idx_list
@@ -601,6 +603,8 @@ class RecommendService:
                 recent10 = self._recommend_recent(user_idx)
                 exclude_set.update([b["book_idx"] for b in recent10])
                 response["recent_top10"] = recent10
+            else:
+                response["recent_top10"] = []
 
         popular10 = self._recommend_popular(exclude_indices=list(exclude_set))
         exclude_set.update([b["book_idx"] for b in popular10])
