@@ -233,7 +233,7 @@ class RecommendService:
                 if bidx:
                     book_idx_list.append(int(bidx))
 
-            return genre_list, mood_list, purpose_list, book_idx_list
+        return genre_list, mood_list, purpose_list, book_idx_list
 
     # -----------------------------------------------------------------
     # 유저 -> 유저 추천
