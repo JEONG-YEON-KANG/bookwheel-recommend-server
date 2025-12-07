@@ -567,13 +567,13 @@ class RecommendService:
             top1 = self._recommend_personal_top1(user_idx)
             if top1:
                 exclude_set.add(top1["book_idx"])
-            response["personal_top1"] = top1
+            response["top1"] = top1
 
-            personal10 = self._recommend_personal(
+            top10 = self._recommend_personal(
                 user_idx, exclude_indices=list(exclude_set)
             )
-            exclude_set.update([b["book_idx"] for b in personal10])
-            response["personal_top10"] = personal10
+            exclude_set.update([b["book_idx"] for b in top10])
+            response["top10"] = top10
 
             if recent_available:
                 recent10 = self._recommend_recent(user_idx)
@@ -585,17 +585,17 @@ class RecommendService:
             )
             if top1:
                 exclude_set.add(top1["book_idx"])
-            response["initial_top1"] = top1
+            response["top1"] = top1
 
-            initial10 = self._recommend_initial(
+            top10 = self._recommend_initial(
                 genre_list,
                 mood_list,
                 purpose_list,
                 book_idx_list,
                 exclude_indices=list(exclude_set),
             )
-            exclude_set.update([b["book_idx"] for b in initial10])
-            response["initial_top10"] = initial10
+            exclude_set.update([b["book_idx"] for b in top10])
+            response["top10"] = top10
 
             if recent_available:
                 recent10 = self._recommend_recent(user_idx)

@@ -38,20 +38,8 @@ class GenreSection(BaseModel):
 
 # 홈 화면 최종 응답 스키마
 class HomeResponse(BaseModel):
-    # warm user
-    personal_top1: Optional[BookItemOnly] = Field(
-        None, serialization_alias="personalTop1"
-    )
-    personal_top10: Optional[List[BookItemOnly]] = Field(
-        None, serialization_alias="personalTop10"
-    )
-    # cold user
-    initial_top1: Optional[BookItemOnly] = Field(
-        None, serialization_alias="initialTop1"
-    )
-    initial_top10: Optional[List[BookItemOnly]] = Field(
-        None, serialization_alias="initialTop10"
-    )
+    top1: BookItemOnly = Field(..., serialization_alias="top1")
+    top10: List[BookItemOnly] = Field(..., serialization_alias="top10")
     # recent 이력 없을 시 누락
     recent_top10: Optional[List[BookItemOnly]] = Field(
         None, serialization_alias="recentTop10"
