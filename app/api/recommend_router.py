@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Body, Header, Depends, Path, Request
-from typing import Annotated
+from typing import Annotated, Optional
 
 from app.services.recommend_service import RecommendService
 from app.schemas.recommend_schema import (
@@ -23,18 +23,13 @@ def get_recommend_service(request: Request) -> RecommendService:
 # ========================================================
 
 
-@router.post("/home", response_model=HomeResponse)
+@router.get("/home", response_model=HomeResponse)
 async def get_home_recommend(
-    req: RecommendInitRequest = Body(...),
     user_idx: Annotated[int, Header(alias="X-User-Idx")] = ...,
     service: RecommendService = Depends(get_recommend_service),
 ):
     response_data = service.get_home_recommend(
         user_idx,
-        genre_list=req.genre_list,
-        mood_list=req.mood_list,
-        purpose_list=req.purpose_list,
-        book_idx_list=req.book_idx_list,
     )
     return response_data
 

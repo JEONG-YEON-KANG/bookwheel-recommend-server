@@ -195,6 +195,47 @@ class RecommendService:
         return warm, recent_available
 
     # -----------------------------------------------------------------
+    # [Helper] 설문 응답 로드
+    # -----------------------------------------------------------------
+    def _load_survey_response(self, user_idx: int):
+        sql = text(
+            """
+            SELECT 
+                Q.idx AS question_idx,
+                O.idx AS option_idx,
+                O.book_idx AS book_idx
+            FROM survey_response_tb R
+            JOIN survey_option_tb O ON R.option_idx = O.idx
+            JOIN survey_question_tb Q ON O.question_idx = Q.idx
+            WHERE R.user_idx = :user_idx
+        """
+        )
+
+        df = pd.read_sql(sql, self.engine, params={"user_idx": user_idx})
+
+        genre_list = []
+        mood_list = []
+        purpose_list = []
+        book_idx_list = []
+
+        for _, row in df.iterrows():
+            qid = int(row["question_idx"])
+            opt = int(row["option_idx"])
+            bidx = row["book_idx"]
+
+            if qid == 1:
+                genre_list.append(opt)
+            elif qid == 2:
+                mood_list.append(opt)
+            elif qid == 3:
+                purpose_list.append(opt)
+            elif qid == 4:
+                if bidx:
+                    book_idx_list.append(int(bidx))
+
+            return genre_list, mood_list, purpose_list, book_idx_list
+
+    # -----------------------------------------------------------------
     # 유저 -> 유저 추천
     # -----------------------------------------------------------------
     def recommend_similar_user(self, user_idx: int, k: int = 10):
@@ -509,15 +550,17 @@ class RecommendService:
     def get_home_recommend(
         self,
         user_idx: int,
-        genre_list: list[int],
-        mood_list: list[int],
-        purpose_list: list[int],
-        book_idx_list: list[int],
     ):
         warm, recent_available = self._get_user_status(user_idx)
 
-        exclude_set = set()
+        if not warm:
+            genre_list, mood_list, purpose_list, book_idx_list = (
+                self._load_survey_response(user_idx)
+            )
+        else:
+            genre_list, mood_list, purpose_list, book_idx_list = [], [], [], []
 
+        exclude_set = set()
         response = {}
 
         if warm:
