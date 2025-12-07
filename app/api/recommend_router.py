@@ -37,7 +37,7 @@ async def get_home_recommend(
 # =========================================================
 # 유사 도서 추천
 # ========================================================
-@router.get("/book/{idx}", response_model=BookListResponse)
+@router.post("/books/{idx}", response_model=BookListResponse)
 async def recomend_similar_book(
     book_idx: Annotated[int, Path(alias="idx")],
     service: RecommendService = Depends(get_recommend_service),
@@ -52,7 +52,7 @@ async def recomend_similar_book(
 # =========================================================
 # 유사 유저 추천
 # ========================================================
-@router.get("/user/{idx}", response_model=UserListResponse)
+@router.get("/users/{idx}", response_model=UserListResponse)
 async def recommend_similar_user(
     user_idx: Annotated[int, Path(alias="idx")],
     service: RecommendService = Depends(get_recommend_service),
