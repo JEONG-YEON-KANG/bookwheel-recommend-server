@@ -541,11 +541,6 @@ class RecommendService:
 
     # -----------------------------------------------------------------
     # 메인 home 추천 함수
-    # section 구성 규칙
-    # warm + recent -> personal + recent + popular + genre
-    # warm + !recent -> personal + popular + genre
-    # cold + recent -> initial + recent + popular + genre
-    # cold + !recent -> initial + popular + genre
     # -----------------------------------------------------------------
     def get_home_recommend(
         self,
@@ -553,17 +548,14 @@ class RecommendService:
     ):
         warm, recent_available = self._get_user_status(user_idx)
 
-        if not warm:
-            genre_list, mood_list, purpose_list, book_idx_list = (
-                self._load_survey_response(user_idx)
-            )
-        else:
-            genre_list, mood_list, purpose_list, book_idx_list = [], [], [], []
+        is_user_in_model = user_idx in self.user_map
+
+        use_warm_logic = warm and is_user_in_model
 
         exclude_set = set()
         response = {}
 
-        if warm:
+        if use_warm_logic:
             top1 = self._recommend_personal_top1(user_idx)
             if top1:
                 exclude_set.add(top1["book_idx"])
@@ -575,15 +567,16 @@ class RecommendService:
             exclude_set.update([b["book_idx"] for b in top10])
             response["top10"] = top10
 
-            if recent_available:
-                recent10 = self._recommend_recent(user_idx)
-                exclude_set.update([b["book_idx"] for b in recent10])
-                response["recent_top10"] = recent10
-            else:
-                response["recent_top10"] = []
         else:
+            genre_list, mood_list, purpose_list, book_idx_list = (
+                self._load_survey_response(user_idx)
+            )
+
             top1 = self._recommend_initial_top1(
-                genre_list, mood_list, purpose_list, book_idx_list
+                genre_list,
+                mood_list,
+                purpose_list,
+                book_idx_list,
             )
             if top1:
                 exclude_set.add(top1["book_idx"])
@@ -599,18 +592,21 @@ class RecommendService:
             exclude_set.update([b["book_idx"] for b in top10])
             response["top10"] = top10
 
-            if recent_available:
-                recent10 = self._recommend_recent(user_idx)
-                exclude_set.update([b["book_idx"] for b in recent10])
-                response["recent_top10"] = recent10
-            else:
-                response["recent_top10"] = []
+        if recent_available:
+            recent_top10 = self._recommend_recent(
+                user_idx, exclude_indices=list(exclude_set)
+            )
+            exclude_set.update([b["book_idx"] for b in recent_top10])
+            response["recent_top10"] = recent_top10
+        else:
+            response["recent_top10"] = []
 
-        popular10 = self._recommend_popular(exclude_indices=list(exclude_set))
-        exclude_set.update([b["book_idx"] for b in popular10])
-        response["popular_top10"] = popular10
+        popular_top10 = self._recommend_popular(exclude_indices=list(exclude_set))
+        exclude_set.update([b["book_idx"] for b in popular_top10])
+        response["popular_top10"] = popular_top10
 
-        genre_section_list = self._recommend_genre(exclude_indices=list(exclude_set))
-        response["genre_section_list"] = genre_section_list
+        response["genre_section_list"] = self._recommend_genre(
+            exclude_indices=list(exclude_set)
+        )
 
         return response
