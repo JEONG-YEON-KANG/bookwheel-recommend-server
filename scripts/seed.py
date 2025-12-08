@@ -1,9 +1,5 @@
 # ======================================================================
-#  BookWheel SEED SCRIPT (Final Version)
-#  - bcrypt password hashing for demo users
-#  - stable user generation (demo users preserved)
-#  - full survey seeding
-#  - auto sequence resync (fix_user_sequence)
+#  BookWheel SEED SCRIPT
 # ======================================================================
 
 from app.constants.constants import (
@@ -13,26 +9,16 @@ from app.constants.constants import (
 )
 import pandas as pd
 from sqlalchemy import create_engine, text
-import os
-import sys
-from dotenv import load_dotenv
-import numpy as np
+import os, sys, random, bcrypt
 from datetime import datetime, timedelta, timezone
-import random
-import bcrypt
+from dotenv import load_dotenv
 
-# ----------------------------------------------------------------------
-# 경로 & 환경 설정
-# ----------------------------------------------------------------------
 current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(current_dir)
 sys.path.append(project_root)
 
 load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
-if not DATABASE_URL:
-    raise ValueError("[ERROR] DATABASE_URL is not set.")
-
 engine = create_engine(DATABASE_URL)
 
 CSV_DIR = os.path.join(project_root, "dataset")
@@ -41,185 +27,148 @@ RATINGS_FILE = os.path.join(CSV_DIR, "ratings.csv")
 TAGS_FILE = os.path.join(CSV_DIR, "tags.csv")
 BOOK_TAGS_FILE = os.path.join(CSV_DIR, "book_tags.csv")
 
-DEMO_USERS = [602, 415, 1278]
+DEMO_USERS = [41293, 50704, 32798]
+
+# -------------------------------
 
 
-# ----------------------------------------------------------------------
-# Utils
-# ----------------------------------------------------------------------
-def now_ts():
+def now():
     return datetime.now(timezone.utc)
 
 
 def clean_isbn(val):
     if pd.isna(val):
         return None
-    s = str(val).strip().replace(".0", "")[:13]
-    return s if s else None
+    return str(val).replace(".0", "")[:13]
 
 
-def random_datetime_within(days=7):
-    now = datetime.now(timezone.utc)
+def rand_dt(days=7):
     delta = timedelta(
         days=random.randint(0, days),
         hours=random.randint(0, 23),
         minutes=random.randint(0, 59),
     )
-    return now - delta
+    return datetime.now(timezone.utc) - delta
 
 
-# bcrypt hashing (백엔드와 완전 동일한 방식)
-def hash_password_raw(password: str) -> str:
-    salt = bcrypt.gensalt()
-    hashed = bcrypt.hashpw(password.encode("utf-8"), salt)
-    return hashed.decode("utf-8")
+def hash_pw(pw):
+    return bcrypt.hashpw(pw.encode("utf-8"), bcrypt.gensalt()).decode()
 
 
 # ======================================================================
-# 0. AUTO RESET + SEQUENCE FIX
+# RESET
 # ======================================================================
 def reset_database(engine):
-    TRUNCATE_SQL = """
-    TRUNCATE TABLE 
-      book_comment_tb,
-      book_highlight_tb,
-      party_book_progress_tb,
-      party_members_tb,
-      party_tb,
-      message_tb,
-      friend_tb,
-      book_review_tb,
-      my_book_progress_tb,
-      to_read_tb,
-      book_rating_tb,
-      book_tag_tb,
-      survey_option_tag_tb,
-      survey_option_tb,
-      survey_question_tb,
-      tag_tb,
-      book_tb,
-      user_basic_tb,
-      user_social_tb,
-      user_tb
-    RESTART IDENTITY CASCADE;
-    """
-
-    with engine.connect() as conn:
-        conn.execute(text(TRUNCATE_SQL))
-        conn.commit()
-
-
-def fix_user_sequence(engine):
     SQL = """
-    SELECT setval(
-        pg_get_serial_sequence('user_tb', 'idx'),
-        (SELECT COALESCE(MAX(idx), 1) FROM user_tb),
-        true
-    );
+    TRUNCATE TABLE 
+      book_comment_tb, book_highlight_tb, party_book_progress_tb,
+      party_members_tb, party_tb, message_tb, friend_tb,
+      book_review_tb, my_book_progress_tb, to_read_tb,
+      book_rating_tb, book_tag_tb, survey_option_tag_tb,
+      survey_option_tb, survey_question_tb, tag_tb,
+      book_tb, user_basic_tb, user_social_tb, user_tb
+    RESTART IDENTITY CASCADE;
     """
     with engine.connect() as conn:
         conn.execute(text(SQL))
         conn.commit()
 
 
+def fix_user_sequence(engine):
+    SQL = """SELECT setval(pg_get_serial_sequence('user_tb','idx'),
+             (SELECT COALESCE(MAX(idx),1) FROM user_tb), true);"""
+    with engine.connect() as conn:
+        conn.execute(text(SQL))
+        conn.commit()
+
+
 # ======================================================================
-# 1. USER SEEDING
+# USER SEED
 # ======================================================================
 def seed_users(engine, max_user_idx):
-    print("[SEED] Users...")
+    normals = set(range(1, max_user_idx + 1)) - set(DEMO_USERS)
 
-    # Normal users autogen
-    normal_user_ids = set(range(1, max_user_idx + 1)) - set(DEMO_USERS)
-
-    normal_users = pd.DataFrame(
+    normal_df = pd.DataFrame(
         {
-            "idx": list(normal_user_ids),
-            "nickname": [f"user_{i}" for i in normal_user_ids],
-            "profile_image_path": [None] * len(normal_user_ids),
-            "type": ["BASIC"] * len(normal_user_ids),
-            "age": [random.randint(18, 40) for _ in normal_user_ids],
-            "gender": [random.choice(["M", "F"]) for _ in normal_user_ids],
-            "created_at": [now_ts()] * len(normal_user_ids),
-            "deleted_at": [None] * len(normal_user_ids),
+            "idx": list(normals),
+            "nickname": [f"user_{i}" for i in normals],
+            "profile_image_path": [None] * len(normals),
+            "type": ["BASIC"] * len(normals),
+            "age": [random.randint(18, 40) for _ in normals],
+            "gender": [random.choice(["M", "F"]) for _ in normals],
+            "created_at": [now()] * len(normals),
+            "deleted_at": [None] * len(normals),
         }
     )
 
-    # Demo users inserted with fixed idx
-    demo_users = pd.DataFrame(
+    demo_df = pd.DataFrame(
         [
             {
-                "idx": 602,
-                "nickname": "로맨스덕후",
-                "profile_image_path": "/images/profile/default1.png",
+                "idx": 41293,
+                "nickname": "스릴러헌터",
+                "profile_image_path": "/images/profile/t1.png",
                 "type": "BASIC",
-                "age": 24,
-                "gender": "F",
-                "created_at": now_ts(),
-                "deleted_at": None,
-            },
-            {
-                "idx": 415,
-                "nickname": "SF매니아",
-                "profile_image_path": "/images/profile/default2.png",
-                "type": "BASIC",
-                "age": 27,
+                "age": 29,
                 "gender": "M",
-                "created_at": now_ts(),
+                "created_at": now(),
                 "deleted_at": None,
             },
             {
-                "idx": 1278,
-                "nickname": "미스터리냥",
-                "profile_image_path": "/images/profile/default3.png",
+                "idx": 50704,
+                "nickname": "드래곤마스터",
+                "profile_image_path": "/images/profile/t2.png",
                 "type": "BASIC",
-                "age": 22,
+                "age": 26,
                 "gender": "F",
-                "created_at": now_ts(),
+                "created_at": now(),
+                "deleted_at": None,
+            },
+            {
+                "idx": 32798,
+                "nickname": "하트시럽",
+                "profile_image_path": "/images/profile/t3.png",
+                "type": "BASIC",
+                "age": 23,
+                "gender": "F",
+                "created_at": now(),
                 "deleted_at": None,
             },
         ]
     )
 
-    all_users = pd.concat([demo_users, normal_users], ignore_index=True)
-    all_users.to_sql("user_tb", engine, if_exists="append", index=False)
+    all_df = pd.concat([demo_df, normal_df], ignore_index=True)
+    all_df.to_sql("user_tb", engine, if_exists="append", index=False)
 
-    # Demo credentials hashed
-    demo_basic = pd.DataFrame(
+    cred = pd.DataFrame(
         [
             {
-                "user_idx": 602,
-                "id": "demo602",
-                "password": hash_password_raw("test1234!"),
-                "email": "demo602@bookwheel.com",
+                "user_idx": 41293,
+                "id": "demo41293",
+                "password": hash_pw("test1234!"),
+                "email": "demo41293@bookwheel.com",
             },
             {
-                "user_idx": 415,
-                "id": "demo415",
-                "password": hash_password_raw("test1234!"),
-                "email": "demo415@bookwheel.com",
+                "user_idx": 50704,
+                "id": "demo50704",
+                "password": hash_pw("test1234!"),
+                "email": "demo50704@bookwheel.com",
             },
             {
-                "user_idx": 1278,
-                "id": "demo1278",
-                "password": hash_password_raw("test1234!"),
-                "email": "demo1278@bookwheel.com",
+                "user_idx": 32798,
+                "id": "demo32798",
+                "password": hash_pw("test1234!"),
+                "email": "demo32798@bookwheel.com",
             },
         ]
     )
-    demo_basic.to_sql("user_basic_tb", engine, if_exists="append", index=False)
-
-    print(
-        f"[OK] Normal users: {len(normal_users)}  Demo users: {len(demo_users)} inserted.\n"
-    )
+    cred.to_sql("user_basic_tb", engine, if_exists="append", index=False)
 
 
 # ======================================================================
-# 2. Books / Tags / Book Tags / Ratings
+# BOOKS / TAGS / RATINGS
 # ======================================================================
 def seed_books(engine):
-    print("[SEED] Books...")
     df = pd.read_csv(BOOKS_FILE)
-
     df = df.rename(
         columns={
             "book_id": "idx",
@@ -235,63 +184,56 @@ def seed_books(engine):
             "isbn13": "isbn13",
         }
     )
-
     df["publisher"] = df["publisher"].fillna("")
     df["description"] = df["description"].fillna("")
     df["language_code"] = df["language_code"].fillna("")
     df["book_file_path"] = "/default/book.epub"
     df["isbn13"] = df["isbn13"].apply(clean_isbn)
 
-    cols = [
-        "idx",
-        "title",
-        "author",
-        "publisher",
-        "publication_year",
-        "description",
-        "book_file_path",
-        "cover_image_path",
-        "average_rating",
-        "ratings_count",
-        "language_code",
-        "isbn13",
-    ]
-
-    df[cols].to_sql("book_tb", engine, if_exists="append", index=False, chunksize=4000)
+    df[
+        [
+            "idx",
+            "title",
+            "author",
+            "publisher",
+            "publication_year",
+            "description",
+            "book_file_path",
+            "cover_image_path",
+            "average_rating",
+            "ratings_count",
+            "language_code",
+            "isbn13",
+        ]
+    ].to_sql("book_tb", engine, if_exists="append", index=False, chunksize=4000)
 
 
 def seed_tags(engine):
-    print("[SEED] Tags...")
     df = pd.read_csv(TAGS_FILE)
     df = df.rename(columns={"Genre ID": "idx", "Genre Name": "name"})
     df.to_sql("tag_tb", engine, if_exists="append", index=False)
 
 
 def seed_book_tags(engine):
-    print("[SEED] Book Tags...")
     df = pd.read_csv(BOOK_TAGS_FILE)
     df = df.rename(columns={"book_id": "book_idx", "genre_id": "tag_idx"})
     df.to_sql("book_tag_tb", engine, if_exists="append", index=False, chunksize=5000)
 
 
 def seed_ratings(engine):
-    print("[SEED] Ratings...")
     df = pd.read_csv(RATINGS_FILE)
-
     df = df.rename(
         columns={"book_id": "book_idx", "user_id": "user_idx", "rating": "rating"}
     )
-
-    valid_books = set(pd.read_sql("SELECT idx FROM book_tb", engine)["idx"].tolist())
-    df = df[df["book_idx"].isin(valid_books)]
-
+    valid = set(pd.read_sql("SELECT idx FROM book_tb", engine)["idx"].tolist())
+    df = df[df["book_idx"].isin(valid)]
     df[["user_idx", "book_idx", "rating"]].to_sql(
-        "book_rating_tb", engine, if_exists="append", index=False, chunksize=20000
+        "book_rating_tb", engine, if_exists="append", index=False
     )
 
 
 # ======================================================================
-# 3. Survey
+# SURVEY
 # ======================================================================
 survey_questions = [
     "주로 어떤 내용의 책에 손이 가시나요?",
@@ -300,100 +242,93 @@ survey_questions = [
     "최근에 감명 깊게 읽은 책은 무엇인가요?",
 ]
 
-SURVEY_BOOK_IDX_LIST = [2, 9, 4, 10, 15, 374]
-
 survey_options_list = [
     list(SURVEY_GENRE_MAPPING.keys()),
     list(SURVEY_MOOD_MAPPING.keys()),
     list(SURVEY_PURPOSE_MAPPING.keys()),
-    SURVEY_BOOK_IDX_LIST,
+    [2, 9, 4, 10, 15, 374],
 ]
 
 
 def seed_survey_questions(engine):
-    print("[SEED] Survey Questions...")
     pd.DataFrame({"content": survey_questions}).to_sql(
         "survey_question_tb", engine, if_exists="append", index=False
     )
 
 
 def seed_survey_options(engine):
-    print("[SEED] Survey Options...")
-
-    q_df = pd.read_sql("SELECT idx FROM survey_question_tb ORDER BY idx", engine)
-    qids = q_df["idx"].tolist()
-
+    qids = pd.read_sql("SELECT idx FROM survey_question_tb ORDER BY idx", engine)[
+        "idx"
+    ].tolist()
     rows = []
-
-    for i, options in enumerate(survey_options_list):
+    for i, opts in enumerate(survey_options_list):
         qid = qids[i]
-        if i == 3:  # 책 선택 옵션
-            for book_idx in options:
-                rows.append({"question_idx": qid, "book_idx": book_idx})
+        if i == 3:
+            for b in opts:
+                rows.append({"question_idx": qid, "book_idx": b})
         else:
-            for opt in options:
-                rows.append({"question_idx": qid, "content": opt})
-
+            for o in opts:
+                rows.append({"question_idx": qid, "content": o})
     pd.DataFrame(rows).to_sql(
         "survey_option_tb", engine, if_exists="append", index=False
     )
 
 
 def seed_survey_option_tags(engine):
-    print("[SEED] Survey Option Tags...]")
-    tags_df = pd.read_sql("SELECT idx, name FROM tag_tb", engine)
-    opt_df = pd.read_sql(
-        "SELECT idx, question_idx, content FROM survey_option_tb WHERE content IS NOT NULL",
+    tags = pd.read_sql("SELECT idx,name FROM tag_tb", engine)
+    opt = pd.read_sql(
+        "SELECT idx,question_idx,content FROM survey_option_tb WHERE content IS NOT NULL",
         engine,
     )
+    tag_map = {n.lower(): i for i, n in zip(tags["idx"], tags["name"])}
 
-    tag_map = {name.lower(): idx for idx, name in zip(tags_df["idx"], tags_df["name"])}
-
-    ALL_MAP = {**SURVEY_GENRE_MAPPING, **SURVEY_MOOD_MAPPING, **SURVEY_PURPOSE_MAPPING}
+    ALL = {**SURVEY_GENRE_MAPPING, **SURVEY_MOOD_MAPPING, **SURVEY_PURPOSE_MAPPING}
     rows = []
-
-    for _, row in opt_df.iterrows():
-        opt_idx = row["idx"]
-        opt_text = row["content"]
-
-        if opt_text in ALL_MAP:
-            for tag_name in ALL_MAP[opt_text]:
-                tid = tag_map.get(tag_name.lower())
+    for _, row in opt.iterrows():
+        c = row["content"]
+        if c in ALL:
+            for t in ALL[c]:
+                tid = tag_map.get(t.lower())
                 if tid:
-                    rows.append({"option_idx": opt_idx, "tag_idx": tid})
+                    rows.append({"option_idx": row["idx"], "tag_idx": tid})
 
-    if rows:
-        pd.DataFrame(rows).to_sql(
-            "survey_option_tag_tb", engine, if_exists="append", index=False
-        )
+    pd.DataFrame(rows).to_sql(
+        "survey_option_tag_tb", engine, if_exists="append", index=False
+    )
 
 
 def seed_demo_survey_responses(engine):
-    print("[SEED] Demo Survey Responses...]")
-    q_df = pd.read_sql("SELECT idx FROM survey_question_tb ORDER BY idx", engine)
-    q1, q2, q3, _ = q_df["idx"].tolist()
-
+    q1, q2, q3, _ = pd.read_sql(
+        "SELECT idx FROM survey_question_tb ORDER BY idx", engine
+    )["idx"].tolist()
     opt_df = pd.read_sql(
-        "SELECT idx, question_idx, content FROM survey_option_tb", engine
+        "SELECT idx,question_idx,content FROM survey_option_tb", engine
     )
 
-    def get_option_id(qid, txt):
-        r = opt_df[(opt_df["question_idx"] == qid) & (opt_df["content"] == txt)]
-        return int(r["idx"].iloc[0])
+    def get_opt(qid, content):
+        return int(
+            opt_df[(opt_df["question_idx"] == qid) & (opt_df["content"] == content)][
+                "idx"
+            ].iloc[0]
+        )
 
-    DEMO_GENRE = {602: "로맨스", 415: "SF", 1278: "미스터리/스릴러"}
-    DEMO_MOOD = {602: "#가슴_따뜻한", 415: "#긴장감_넘치는", 1278: "#긴장감_넘치는"}
+    DEMO_GENRE = {41293: "미스터리/스릴러", 50704: "판타지", 32798: "로맨스"}
+    DEMO_MOOD = {
+        41293: "#긴장감_넘치는",
+        50704: "#유쾌하고_재미있는",
+        32798: "#가슴_따뜻한",
+    }
     DEMO_PURPOSE = {
-        602: "따뜻한 위로와 감동",
-        415: "스트레스 해소",
-        1278: "재미와 교양 쌓기",
+        41293: "재미와 교양 쌓기",
+        50704: "스트레스 해소",
+        32798: "따뜻한 위로와 감동",
     }
 
     rows = []
     for u in DEMO_USERS:
-        rows.append({"user_idx": u, "option_idx": get_option_id(q1, DEMO_GENRE[u])})
-        rows.append({"user_idx": u, "option_idx": get_option_id(q2, DEMO_MOOD[u])})
-        rows.append({"user_idx": u, "option_idx": get_option_id(q3, DEMO_PURPOSE[u])})
+        rows.append({"user_idx": u, "option_idx": get_opt(q1, DEMO_GENRE[u])})
+        rows.append({"user_idx": u, "option_idx": get_opt(q2, DEMO_MOOD[u])})
+        rows.append({"user_idx": u, "option_idx": get_opt(q3, DEMO_PURPOSE[u])})
 
     pd.DataFrame(rows).to_sql(
         "survey_response_tb", engine, if_exists="append", index=False
@@ -401,34 +336,47 @@ def seed_demo_survey_responses(engine):
 
 
 # ======================================================================
-# 4. Demo Activity
+# DEMO ACTIVITY
 # ======================================================================
-def seed_demo_recent_progress(engine):
-    print("[SEED] Demo Recent Reading Progress...]")
+GENRE_MAP = {
+    "미스터리/스릴러": ["mystery", "thriller", "suspense", "crime"],
+    "판타지": ["fantasy", "epic", "magic"],
+    "로맨스": ["romance", "love", "chick lit"],
+}
 
+
+def pick_recent_books_by_genre(engine, genre_keywords, n=3):
+    keywords = "', '".join(genre_keywords)
+    sql = f"""
+    SELECT DISTINCT bt.book_idx
+    FROM book_tag_tb bt
+    JOIN tag_tb t ON bt.tag_idx = t.idx
+    WHERE LOWER(t.name) IN ('{keywords}')
+    LIMIT 200;
+    """
+    df = pd.read_sql(sql, engine)
+    if df.empty:
+        return []
+    return random.sample(df["book_idx"].tolist(), k=min(n, len(df)))
+
+
+def seed_demo_recent_progress(engine):
     DEMO_RECENT = {
-        602: [8854, 1308, 3241],
-        415: [2527, 2149, 8187],
-        1278: [9470, 2081, 1602],
+        41293: pick_recent_books_by_genre(engine, GENRE_MAP["미스터리/스릴러"]),
+        50704: pick_recent_books_by_genre(engine, GENRE_MAP["판타지"]),
+        32798: pick_recent_books_by_genre(engine, GENRE_MAP["로맨스"]),
     }
 
     rows = []
-    now = datetime.now(timezone.utc)
-
-    for u, book_list in DEMO_RECENT.items():
-        offsets = [
-            timedelta(hours=random.randint(0, 2)),
-            timedelta(hours=random.randint(4, 12)),
-            timedelta(days=random.randint(1, 3)),
-        ]
-        for i, b in enumerate(book_list):
+    for u, books in DEMO_RECENT.items():
+        for i, b in enumerate(books[:3]):
             rows.append(
                 {
                     "user_idx": u,
-                    "book_idx": b,
-                    "progress": round(random.uniform(0.2, 0.9), 3),
-                    "current_cfi_position": f"/6/2[chap{i}]!/4/{i}",
-                    "updated_at": now - offsets[i],
+                    "book_idx": int(b),
+                    "progress": round(random.uniform(0.3, 0.95), 3),
+                    "current_cfi_position": f"/6/2[{i}]!/4/{i}",
+                    "updated_at": rand_dt(5),
                 }
             )
 
@@ -438,17 +386,13 @@ def seed_demo_recent_progress(engine):
 
 
 def seed_reviews(engine):
-    print("[SEED] Demo Reviews...]")
-
     samples = [
-        "정말 감명 깊게 읽은 책입니다!",
-        "스토리가 흥미진진하고 캐릭터가 좋아요.",
-        "조금 어려웠습니다.",
-        "배울 점이 많네요.",
+        "정말 재미있었어요!",
+        "몰입감 최고!",
+        "조금 아쉬웠습니다.",
+        "감동적이었어요.",
     ]
-
     rows = []
-
     for u in DEMO_USERS:
         df = pd.read_sql(
             f"SELECT book_idx FROM my_book_progress_tb WHERE user_idx={u}", engine
@@ -459,72 +403,56 @@ def seed_reviews(engine):
                     "user_idx": u,
                     "book_idx": int(b),
                     "content": random.choice(samples),
-                    "created_at": random_datetime_within(5),
+                    "created_at": rand_dt(5),
                 }
             )
-
-    if rows:
-        pd.DataFrame(rows).to_sql(
-            "book_review_tb", engine, if_exists="append", index=False
-        )
+    pd.DataFrame(rows).to_sql("book_review_tb", engine, if_exists="append", index=False)
 
 
 def seed_demo_friends(engine):
-    print("[SEED] Demo Friends...]")
-
     rows = [
         {
-            "request_user_idx": 602,
-            "receive_user_idx": 415,
+            "request_user_idx": 41293,
+            "receive_user_idx": 50704,
             "status": "ACCEPTED",
-            "created_at": now_ts(),
+            "created_at": now(),
         },
         {
-            "request_user_idx": 602,
-            "receive_user_idx": 1278,
+            "request_user_idx": 50704,
+            "receive_user_idx": 32798,
             "status": "ACCEPTED",
-            "created_at": now_ts(),
+            "created_at": now(),
         },
     ]
-
     pd.DataFrame(rows).to_sql("friend_tb", engine, if_exists="append", index=False)
 
 
 def seed_demo_messages(engine):
-    print("[SEED] Demo Messages...]")
-
-    messages = ["이 책 읽어봤어?", "추천 고마워!", "재밌더라", "읽어볼게!"]
-    pairs = [(602, 415), (415, 1278), (602, 1278)]
-
+    msgs = ["이 책 봤어?", "완전 재밌음!", "추천해줘!", "읽어볼게!"]
+    pairs = [(41293, 50704), (50704, 32798), (41293, 32798)]
     rows = []
-
     for s, r in pairs:
         for _ in range(2):
             rows.append(
                 {
                     "sender_idx": s,
                     "receiver_idx": r,
-                    "content": random.choice(messages),
+                    "content": random.choice(msgs),
                     "is_read": random.random() < 0.5,
-                    "sent_at": random_datetime_within(10),
+                    "sent_at": rand_dt(10),
                 }
             )
-
     pd.DataFrame(rows).to_sql("message_tb", engine, if_exists="append", index=False)
 
 
 def seed_demo_parties(engine):
-    print("[SEED] Demo Parties...]")
-
     popular = pd.read_sql(
         "SELECT idx FROM book_tb ORDER BY ratings_count DESC LIMIT 30", engine
     )["idx"].tolist()
-
     party_rows = []
     member_rows = []
     progress_rows = []
 
-    # create 3 parties (one by each demo user)
     for u in DEMO_USERS:
         party_rows.append(
             {
@@ -536,25 +464,23 @@ def seed_demo_parties(engine):
                 "current_members": 1,
                 "status": "OPEN",
                 "is_private": False,
-                "created_at": now_ts(),
+                "created_at": now(),
             }
         )
 
     pd.DataFrame(party_rows).to_sql("party_tb", engine, if_exists="append", index=False)
-
     party_df = pd.read_sql(
-        "SELECT idx, host_user_idx FROM party_tb ORDER BY idx DESC LIMIT 3", engine
+        "SELECT idx,host_user_idx FROM party_tb ORDER BY idx DESC LIMIT 3", engine
     )
 
     for _, row in party_df.iterrows():
         pid = int(row["idx"])
         host = int(row["host_user_idx"])
-
-        member_rows.append({"party_idx": pid, "user_idx": host, "status": "ACTIVE"})
-
+        member_rows.append({"party_idx": pid, "user_idx": host, "status": "JOINED"})
         others = [u for u in DEMO_USERS if u != host]
+
         for j in random.sample(others, random.randint(1, 2)):
-            member_rows.append({"party_idx": pid, "user_idx": j, "status": "ACTIVE"})
+            member_rows.append({"party_idx": pid, "user_idx": j, "status": "JOINED"})
 
         for u in DEMO_USERS:
             progress_rows.append(
@@ -563,7 +489,7 @@ def seed_demo_parties(engine):
                     "user_idx": u,
                     "progress": round(random.uniform(0.1, 0.8), 2),
                     "current_cfi_position": "/6/2[last]!/4/12",
-                    "updated_at": random_datetime_within(5),
+                    "updated_at": rand_dt(5),
                 }
             )
 
@@ -576,24 +502,17 @@ def seed_demo_parties(engine):
 
 
 # ======================================================================
-# MAIN EXECUTION
+# MAIN
 # ======================================================================
 if __name__ == "__main__":
-    print("\n🚀 BookWheel Database Seeding Started...\n")
-
-    for f in [BOOKS_FILE, RATINGS_FILE, TAGS_FILE, BOOK_TAGS_FILE]:
-        if not os.path.exists(f):
-            print(f"[ERROR] Missing file: {f}")
-            exit()
-
     reset_database(engine)
 
     try:
-        max_user_idx = pd.read_csv(RATINGS_FILE)["user_id"].max()
-    except Exception:
-        max_user_idx = 500
+        max_uid = pd.read_csv(RATINGS_FILE)["user_id"].max()
+    except:
+        max_uid = 500
 
-    seed_users(engine, max_user_idx)
+    seed_users(engine, max_uid)
     fix_user_sequence(engine)
 
     seed_books(engine)
@@ -612,4 +531,4 @@ if __name__ == "__main__":
     seed_demo_messages(engine)
     seed_demo_parties(engine)
 
-    print("🎉 All Done! BookWheel DB is fully seeded and ready.\n")
+    print("All Done!")
