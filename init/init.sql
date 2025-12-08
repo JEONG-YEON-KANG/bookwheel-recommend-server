@@ -5,5 +5,3 @@ CREATE DATABASE bookwheel OWNER bookwheel_admin;
 GRANT ALL ON SCHEMA public TO bookwheel_admin;
 
 \c bookwheel bookwheel_admin
-
-\i /rdb/ddl.sql

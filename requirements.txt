@@ -4,13 +4,8 @@ pydantic
 python-dotenv
 sqlalchemy
 psycopg2-binary
-lightfm
-numpy<2.0
-pandas
-scipy
-scikit-learn
-apscheduler
-tqdm
-matplotlib
-seaborn
 bcrypt
+numpy
+lightfm
+scipy
+pandas

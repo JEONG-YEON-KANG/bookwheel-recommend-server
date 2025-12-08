@@ -6,7 +6,7 @@
 #  - auto sequence resync (fix_user_sequence)
 # ======================================================================
 
-from app.core.constants import (
+from app.constants import (
     SURVEY_GENRE_MAPPING,
     SURVEY_MOOD_MAPPING,
     SURVEY_PURPOSE_MAPPING,
