@@ -1,9 +1,0 @@
-{
-  "python.defaultInterpreterPath": "myvenv/bin/python",
-  "python.analysis.extraPaths": ["myvenv/lib/python3.9/site-packages"],
-  "cSpell.enabled": false,
-  "cSpell.words": ["dotenv", "apscheduler", "psycopg2"],
-  "python-envs.defaultEnvManager": "ms-python.python:conda",
-  "python-envs.defaultPackageManager": "ms-python.python:conda",
-  "python-envs.pythonProjects": []
-}
