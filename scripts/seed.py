@@ -202,7 +202,16 @@ def seed_users(engine, max_user_idx):
 def seed_books(engine):
     print("Seeding books...")
 
+    AWS_REGION = os.getenv("AWS_REGION")
+    AWS_BUCKET = os.getenv("AWS_S3_BUCKET_NAME")
+
+    if AWS_REGION is None or AWS_BUCKET is None:
+        raise ValueError("AWS env not found")
+
+    S3_BASE = f"https://{AWS_BUCKET}.s3.{AWS_REGION}.amazonaws.com"
+
     df = pd.read_csv(BOOKS_FILE)
+
     df = df.rename(
         columns={
             "book_id": "idx",
@@ -214,15 +223,19 @@ def seed_books(engine):
             "language_code": "language_code",
             "average_rating": "average_rating",
             "ratings_count": "ratings_count",
-            "image_url": "cover_image_path",
             "isbn13": "isbn13",
         }
     )
+
+    # 🔥🔥 CSV의 image_url을 완전 무시하고 새로 만든다
+    df["cover_image_path"] = df["idx"].apply(lambda x: f"{S3_BASE}/book-cover/{x}.jpg")
+
     df["publisher"] = df["publisher"].fillna("")
     df["description"] = df["description"].fillna("")
     df["language_code"] = df["language_code"].fillna("")
-    df["book_file_path"] = "/default/book.epub"
     df["isbn13"] = df["isbn13"].apply(clean_isbn)
+
+    df["book_file_path"] = "/default/book.epub"
 
     df[
         [
@@ -402,6 +415,7 @@ def seed_demo_recent_progress(engine):
 
     rows = []
     for u, books in DEMO_RECENT.items():
+        base_time = now()
         for i, b in enumerate(books[:3]):
             rows.append(
                 {
@@ -409,7 +423,7 @@ def seed_demo_recent_progress(engine):
                     "book_idx": int(b),
                     "progress": round(random.uniform(0.3, 0.95), 3),
                     "current_cfi_position": f"/6/2[{i}]!/4/{i}",
-                    "updated_at": rand_dt(5),
+                    "updated_at": base_time - timedelta(minutes=i),
                 }
             )
 
@@ -538,6 +552,55 @@ def seed_demo_parties(engine):
     )
 
 
+def seed_demo_highlights(engine):
+    print("Seeding demo highlights...")
+
+    rows = [
+        {
+            "party_idx": 1,
+            "user_idx": 41293,
+            "book_idx": 12,
+            "cfi_range": "epubcfi(/6/8!/4/2/4,:1:15,/1:26)",
+            "content": "combination",
+            "color_code": "#FFA07A",
+            "created_at": now(),
+            "deleted_at": None,
+        },
+        {
+            "party_idx": 1,
+            "user_idx": 41293,
+            "book_idx": 12,
+            "cfi_range": "epubcfi(/6/8!/4/2/4,:1:224,/1:234)",
+            "content": "preserving",
+            "color_code": "#FFA07A",
+            "created_at": now(),
+            "deleted_at": None,
+        },
+    ]
+
+    pd.DataFrame(rows).to_sql(
+        "book_highlight_tb", engine, if_exists="append", index=False
+    )
+
+
+def seed_demo_comments(engine):
+    print("Seeding demo comments...")
+
+    rows = [
+        {
+            "user_idx": 41293,
+            "book_idx": 12,
+            "highlight_idx": 1,
+            "content": "이 문단이 정말 핵심을 잘 짚어주는 것 같아요.",
+            "created_at": now(),
+        }
+    ]
+
+    pd.DataFrame(rows).to_sql(
+        "book_comment_tb", engine, if_exists="append", index=False
+    )
+
+
 # ======================================================================
 # MAIN
 # ======================================================================
@@ -567,5 +630,8 @@ if __name__ == "__main__":
     seed_demo_friends(engine)
     seed_demo_messages(engine)
     seed_demo_parties(engine)
+
+    seed_demo_highlights(engine)
+    seed_demo_comments(engine)
 
     print("All Done!")
