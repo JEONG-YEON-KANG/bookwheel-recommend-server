@@ -12,6 +12,7 @@ from sqlalchemy import create_engine, text
 import os, sys, random, bcrypt
 from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
+import psycopg2
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(current_dir)
@@ -53,6 +54,23 @@ def rand_dt(days=7):
 
 def hash_pw(pw):
     return bcrypt.hashpw(pw.encode("utf-8"), bcrypt.gensalt()).decode()
+
+
+def copy_from_csv(table_name: str, csv_path: str, columns: list):
+    col_str = ", ".join(columns)
+    sql = f"""
+        COPY {table_name} ({col_str})
+        FROM STDIN
+        WITH (FORMAT csv, HEADER true, ENCODING 'UTF8');
+    """
+
+    print(f"[COPY] Loading → {table_name} from {csv_path}")
+
+    raw_conn = engine.raw_connection()
+    with raw_conn.cursor() as cur:
+        with open(csv_path, "r", encoding="utf-8") as f:
+            cur.copy_expert(sql, f)
+    raw_conn.commit()
 
 
 # ======================================================================
@@ -219,24 +237,33 @@ def seed_tags(engine):
     df.to_sql("tag_tb", engine, if_exists="append", index=False)
 
 
-def seed_book_tags(engine):
-    print("Seeding book tags...")
+def seed_book_tags_copy():
+    print("Preparing book_tags.csv for COPY...")
+
     df = pd.read_csv(BOOK_TAGS_FILE)
     df = df.rename(columns={"book_id": "book_idx", "genre_id": "tag_idx"})
-    df.to_sql("book_tag_tb", engine, if_exists="append", index=False, chunksize=5000)
+
+    csv_path = os.path.join(current_dir, "tmp_book_tags_copy.csv")
+    df.to_csv(csv_path, index=False)
+
+    copy_from_csv("book_tag_tb", csv_path, ["book_idx", "tag_idx"])
 
 
-def seed_ratings(engine):
-    print("Seeding book ratings...")
+def seed_ratings_copy():
+    print("Preparing ratings.csv for COPY...")
+
     df = pd.read_csv(RATINGS_FILE)
-    df = df.rename(
-        columns={"book_id": "book_idx", "user_id": "user_idx", "rating": "rating"}
-    )
+    df = df.rename(columns={"book_id": "book_idx", "user_id": "user_idx"})
+
     valid = set(pd.read_sql("SELECT idx FROM book_tb", engine)["idx"].tolist())
     df = df[df["book_idx"].isin(valid)]
-    df[["user_idx", "book_idx", "rating"]].to_sql(
-        "book_rating_tb", engine, if_exists="append", index=False
-    )
+
+    # 임시 csv 생성
+    csv_path = os.path.join(current_dir, "tmp_ratings_copy.csv")
+    df.to_csv(csv_path, index=False)
+
+    # COPY 실행
+    copy_from_csv("book_rating_tb", csv_path, ["user_idx", "book_idx", "rating"])
 
 
 # ======================================================================
@@ -534,8 +561,8 @@ if __name__ == "__main__":
 
     seed_books(engine)
     seed_tags(engine)
-    seed_book_tags(engine)
-    seed_ratings(engine)
+    seed_book_tags_copy()
+    seed_ratings_copy()
 
     seed_survey_questions(engine)
     seed_survey_options(engine)
