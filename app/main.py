@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 
 from app.api import recommend_router
 from app.services.recommend_service import RecommendService
+import os
 
 
 # ================================
@@ -48,3 +49,4 @@ app.include_router(
     prefix="/api/v1",
     tags=["Recommend"],
 )
+print("FASTAPI DATABASE_URL =", os.getenv("DATABASE_URL"))
