@@ -388,28 +388,16 @@ GENRE_MAP = {
 }
 
 
-def pick_recent_books_by_genre(engine, genre_keywords, n=3):
-    keywords = "', '".join(genre_keywords)
-    sql = f"""
-    SELECT DISTINCT bt.book_idx
-    FROM book_tag_tb bt
-    JOIN tag_tb t ON bt.tag_idx = t.idx
-    WHERE LOWER(t.name) IN ('{keywords}')
-    LIMIT 200;
-    """
-    df = pd.read_sql(sql, engine)
-    if df.empty:
-        return []
-    return random.sample(df["book_idx"].tolist(), k=min(n, len(df)))
-
-
 def seed_demo_recent_progress(engine):
     print("Seeding demo recent reading progress...")
 
+    thriller_books = [26, 30, 769]
+    fantasy_books = [7, 155, 562]
+    romance_books = [10, 6, 137]
     DEMO_RECENT = {
-        41293: pick_recent_books_by_genre(engine, GENRE_MAP["미스터리/스릴러"]),
-        50704: pick_recent_books_by_genre(engine, GENRE_MAP["판타지"]),
-        32798: pick_recent_books_by_genre(engine, GENRE_MAP["로맨스"]),
+        41293: thriller_books,
+        50704: fantasy_books,
+        32798: romance_books,
     }
 
     rows = []
