@@ -339,17 +339,25 @@ class RecommendService:
                 JOIN party_tb p ON pbp.party_idx = p.idx
                 WHERE pbp.user_idx = :u AND pbp.progress >= 0.2
             ) t ORDER BY updated_at DESC LIMIT 1
-        """
+            """
         )
 
         df = pd.read_sql(sql, self.engine, params={"u": user_idx})
+
         if df.empty or pd.isna(df["book_idx"][0]):
-            return []
+            return None
 
         recent_book = int(df["book_idx"][0])
         exclude.add(recent_book)
 
-        return self.recommend_similar_book(recent_book, 10, exclude)
+        recommended = self.recommend_similar_book(recent_book, 10, exclude)
+
+        return [
+            {
+                "bookIdx": recent_book,
+                "bookList": [{"bookIdx": r["book_idx"]} for r in recommended],
+            }
+        ]
 
     # ============================================================================
     # popular
@@ -408,28 +416,25 @@ class RecommendService:
         warm, recent = self._get_user_status(user_idx)
         is_user_in_model = user_idx in self.user_map
 
-        use_warm_logic = warm and is_user_in_model
-
         exclude = set()
 
-        if use_warm_logic:
+        if warm and is_user_in_model:
             top1, top10 = self._personal_top1_top10(user_idx, exclude)
         else:
             top1, top10 = self._initial_top1_top10(user_idx, exclude)
 
-        if recent:
-            recent_top10 = self._home_recent(user_idx, exclude)
-        else:
-            recent_top10 = []
+        recent_top10 = self._home_recent(user_idx, exclude)
+
+        if not recent_top10:
+            recent_top10 = None
 
         popular_top10 = self._home_popular(exclude)
-
         genre_section_list = self._home_genre(exclude)
 
         return {
             "top1": top1,
             "top10": top10,
-            "recent_top10": recent_top10,
-            "popular_top10": popular_top10,
-            "genre_section_list": genre_section_list,
+            "recentTop10": recent_top10,
+            "popularTop10": popular_top10,
+            "genreSectionList": genre_section_list,
         }

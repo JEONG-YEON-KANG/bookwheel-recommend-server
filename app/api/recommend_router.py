@@ -6,7 +6,6 @@ from app.schemas.recommend_schema import (
     BookListResponse,
     UserListResponse,
     HomeResponse,
-    RecommendInitRequest,
     BookItemOnly,
 )
 
