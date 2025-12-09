@@ -86,6 +86,8 @@ def fix_user_sequence(engine):
 # USER SEED
 # ======================================================================
 def seed_users(engine, max_user_idx):
+    print("Seeding users...")
+
     normals = set(range(1, max_user_idx + 1)) - set(DEMO_USERS)
 
     normal_df = pd.DataFrame(
@@ -168,6 +170,8 @@ def seed_users(engine, max_user_idx):
 # BOOKS / TAGS / RATINGS
 # ======================================================================
 def seed_books(engine):
+    print("Seeding books...")
+
     df = pd.read_csv(BOOKS_FILE)
     df = df.rename(
         columns={
@@ -209,18 +213,21 @@ def seed_books(engine):
 
 
 def seed_tags(engine):
+    print("Seeding tags...")
     df = pd.read_csv(TAGS_FILE)
     df = df.rename(columns={"Genre ID": "idx", "Genre Name": "name"})
     df.to_sql("tag_tb", engine, if_exists="append", index=False)
 
 
 def seed_book_tags(engine):
+    print("Seeding book tags...")
     df = pd.read_csv(BOOK_TAGS_FILE)
     df = df.rename(columns={"book_id": "book_idx", "genre_id": "tag_idx"})
     df.to_sql("book_tag_tb", engine, if_exists="append", index=False, chunksize=5000)
 
 
 def seed_ratings(engine):
+    print("Seeding book ratings...")
     df = pd.read_csv(RATINGS_FILE)
     df = df.rename(
         columns={"book_id": "book_idx", "user_id": "user_idx", "rating": "rating"}
@@ -251,12 +258,14 @@ survey_options_list = [
 
 
 def seed_survey_questions(engine):
+    print("Seeding survey questions...")
     pd.DataFrame({"content": survey_questions}).to_sql(
         "survey_question_tb", engine, if_exists="append", index=False
     )
 
 
 def seed_survey_options(engine):
+    print("Seeding survey options...")
     qids = pd.read_sql("SELECT idx FROM survey_question_tb ORDER BY idx", engine)[
         "idx"
     ].tolist()
@@ -275,6 +284,7 @@ def seed_survey_options(engine):
 
 
 def seed_survey_option_tags(engine):
+    print("Seeding survey option tags...")
     tags = pd.read_sql("SELECT idx,name FROM tag_tb", engine)
     opt = pd.read_sql(
         "SELECT idx,question_idx,content FROM survey_option_tb WHERE content IS NOT NULL",
@@ -298,6 +308,7 @@ def seed_survey_option_tags(engine):
 
 
 def seed_demo_survey_responses(engine):
+    print("Seeding demo survey responses...")
     q1, q2, q3, _ = pd.read_sql(
         "SELECT idx FROM survey_question_tb ORDER BY idx", engine
     )["idx"].tolist()
@@ -361,6 +372,8 @@ def pick_recent_books_by_genre(engine, genre_keywords, n=3):
 
 
 def seed_demo_recent_progress(engine):
+    print("Seeding demo recent reading progress...")
+
     DEMO_RECENT = {
         41293: pick_recent_books_by_genre(engine, GENRE_MAP["미스터리/스릴러"]),
         50704: pick_recent_books_by_genre(engine, GENRE_MAP["판타지"]),
@@ -386,6 +399,7 @@ def seed_demo_recent_progress(engine):
 
 
 def seed_reviews(engine):
+    print("Seeding book reviews...")
     samples = [
         "정말 재미있었어요!",
         "몰입감 최고!",
@@ -410,6 +424,7 @@ def seed_reviews(engine):
 
 
 def seed_demo_friends(engine):
+    print("Seeding demo friends...")
     rows = [
         {
             "request_user_idx": 41293,
@@ -428,6 +443,7 @@ def seed_demo_friends(engine):
 
 
 def seed_demo_messages(engine):
+    print("Seeding demo messages...")
     msgs = ["이 책 봤어?", "완전 재밌음!", "추천해줘!", "읽어볼게!"]
     pairs = [(41293, 50704), (50704, 32798), (41293, 32798)]
     rows = []
@@ -446,6 +462,7 @@ def seed_demo_messages(engine):
 
 
 def seed_demo_parties(engine):
+    print("Seeding demo reading parties...")
     popular = pd.read_sql(
         "SELECT idx FROM book_tb ORDER BY ratings_count DESC LIMIT 30", engine
     )["idx"].tolist()
