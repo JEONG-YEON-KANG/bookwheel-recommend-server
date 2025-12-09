@@ -5,6 +5,9 @@ from contextlib import asynccontextmanager
 from app.api import recommend_router
 from app.services.recommend_service import RecommendService
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 # ================================
