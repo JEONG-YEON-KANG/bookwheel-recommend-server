@@ -118,6 +118,14 @@ def fix_user_sequence(engine):
 def seed_users(engine, max_user_idx):
     print("Seeding users...")
 
+    AWS_REGION = os.getenv("AWS_REGION")
+    AWS_BUCKET = os.getenv("AWS_S3_BUCKET_NAME")
+
+    if AWS_REGION is None or AWS_BUCKET is None:
+        raise ValueError("AWS env not found")
+
+    S3_BASE = f"https://{AWS_BUCKET}.s3.{AWS_REGION}.amazonaws.com"
+
     normals = set(range(1, max_user_idx + 1)) - set(DEMO_USERS)
 
     normal_df = pd.DataFrame(
@@ -138,7 +146,7 @@ def seed_users(engine, max_user_idx):
             {
                 "idx": 41293,
                 "nickname": "스릴러헌터",
-                "profile_image_path": "/images/profile/t1.png",
+                "profile_image_path": f"{S3_BASE}/user-profile/41293.jpeg",
                 "type": "BASIC",
                 "age": 29,
                 "gender": "M",
@@ -148,7 +156,7 @@ def seed_users(engine, max_user_idx):
             {
                 "idx": 50704,
                 "nickname": "드래곤마스터",
-                "profile_image_path": "/images/profile/t2.png",
+                "profile_image_path": f"{S3_BASE}/user-profile/50704.jpeg",
                 "type": "BASIC",
                 "age": 26,
                 "gender": "F",
@@ -158,7 +166,7 @@ def seed_users(engine, max_user_idx):
             {
                 "idx": 32798,
                 "nickname": "하트시럽",
-                "profile_image_path": "/images/profile/t3.png",
+                "profile_image_path": f"{S3_BASE}/user-profile/32798.jpg",
                 "type": "BASIC",
                 "age": 23,
                 "gender": "F",
@@ -227,7 +235,6 @@ def seed_books(engine):
         }
     )
 
-    # 🔥🔥 CSV의 image_url을 완전 무시하고 새로 만든다
     df["cover_image_path"] = df["idx"].apply(lambda x: f"{S3_BASE}/book-cover/{x}.jpg")
 
     df["publisher"] = df["publisher"].fillna("")
@@ -236,6 +243,10 @@ def seed_books(engine):
     df["isbn13"] = df["isbn13"].apply(clean_isbn)
 
     df["book_file_path"] = "/default/book.epub"
+
+    df.loc[df["idx"] == 194, "book_file_path"] = (
+        "https://s3.amazonaws.com/epubjs/books/moby-dick.epub"
+    )
 
     df[
         [
@@ -401,34 +412,100 @@ GENRE_MAP = {
 }
 
 
-def seed_demo_recent_progress(engine):
-    print("Seeding demo recent reading progress...")
+def seed_my_progress_custom(engine):
+    print("Seeding MY CUSTOM progress...")
 
-    thriller_books = [26, 30, 769]
-    fantasy_books = [7, 155, 562]
-    romance_books = [10, 6, 137]
-    DEMO_RECENT = {
-        41293: thriller_books,
-        50704: fantasy_books,
-        32798: romance_books,
-    }
+    BOOKS = [1534, 1934, 2964, 26]
 
     rows = []
-    for u, books in DEMO_RECENT.items():
-        base_time = now()
-        for i, b in enumerate(books[:3]):
-            rows.append(
-                {
-                    "user_idx": u,
-                    "book_idx": int(b),
-                    "progress": round(random.uniform(0.3, 0.95), 3),
-                    "current_cfi_position": f"/6/2[{i}]!/4/{i}",
-                    "updated_at": base_time - timedelta(minutes=i),
-                }
-            )
+    for i, b in enumerate(BOOKS):
+        rows.append(
+            {
+                "user_idx": 41293,
+                "book_idx": int(b),
+                "progress": round(random.uniform(0.4, 0.98), 3),
+                "current_cfi_position": f"/6/2[{i}]!/4/{i}",
+                "updated_at": now() + timedelta(minutes=i),
+            }
+        )
+
+    rows[3]["updated_at"] = now() + timedelta(hours=2)
 
     pd.DataFrame(rows).to_sql(
         "my_book_progress_tb", engine, if_exists="append", index=False
+    )
+
+
+def seed_custom_parties(engine):
+    print("Seeding CUSTOM parties...")
+    MOBY = 194
+    CATCHER = 8
+    PRIDE = 10
+
+    party_rows = [
+        {
+            "host_user_idx": 41293,
+            "book_idx": MOBY,
+            "title": "고전 명작 ‘모비딕’ 깊이 읽기",
+            "description": "끝없는 집착과 광기의 항해를 함께 따라가요. 고전이지만 쉽고 재미있게 읽는 모임입니다.",
+            "max_members": 10,
+            "current_members": 3,
+            "status": "OPEN",
+            "is_private": False,
+            "created_at": now(),
+        },
+        {
+            "host_user_idx": 50704,
+            "book_idx": CATCHER,
+            "title": "더 캐처 인 더 라이 감성 토크",
+            "description": "홀든의 감정을 따라가며 각자 공감한 장면을 나누는 모임입니다.",
+            "max_members": 10,
+            "current_members": 3,
+            "status": "OPEN",
+            "is_private": False,
+            "created_at": now(),
+        },
+        {
+            "host_user_idx": 32798,
+            "book_idx": PRIDE,
+            "title": "오만과 편견 명대사 함께 읽기",
+            "description": "엘리자베스와 다아시의 감정 변화를 이야기하는 따뜻한 분위기의 모임입니다.",
+            "max_members": 10,
+            "current_members": 3,
+            "status": "OPEN",
+            "is_private": False,
+            "created_at": now(),
+        },
+    ]
+
+    pd.DataFrame(party_rows).to_sql("party_tb", engine, if_exists="append", index=False)
+
+    party_df = pd.read_sql("SELECT idx FROM party_tb ORDER BY idx DESC LIMIT 3", engine)
+
+    MEMBERS = [41293, 50704, 32798]
+    member_rows = []
+    progress_rows = []
+
+    for _, row in party_df.iterrows():
+        pid = int(row["idx"])
+
+        for i, u in enumerate(MEMBERS):
+            member_rows.append({"party_idx": pid, "user_idx": u, "status": "JOINED"})
+            progress_rows.append(
+                {
+                    "party_idx": pid,
+                    "user_idx": u,
+                    "progress": round(random.uniform(0.1, 0.9), 2),
+                    "current_cfi_position": "/6/2[last]!/4/12",
+                    "updated_at": now() + timedelta(minutes=i),
+                }
+            )
+
+    pd.DataFrame(member_rows).to_sql(
+        "party_members_tb", engine, if_exists="append", index=False
+    )
+    pd.DataFrame(progress_rows).to_sql(
+        "party_book_progress_tb", engine, if_exists="append", index=False
     )
 
 
@@ -493,63 +570,6 @@ def seed_demo_messages(engine):
                 }
             )
     pd.DataFrame(rows).to_sql("message_tb", engine, if_exists="append", index=False)
-
-
-def seed_demo_parties(engine):
-    print("Seeding demo reading parties...")
-    popular = pd.read_sql(
-        "SELECT idx FROM book_tb ORDER BY ratings_count DESC LIMIT 30", engine
-    )["idx"].tolist()
-    party_rows = []
-    member_rows = []
-    progress_rows = []
-
-    for u in DEMO_USERS:
-        party_rows.append(
-            {
-                "host_user_idx": u,
-                "book_idx": int(random.choice(popular)),
-                "title": f"{u}님의 독서 파티",
-                "description": "함께 읽어요!",
-                "max_members": 10,
-                "current_members": 1,
-                "status": "OPEN",
-                "is_private": False,
-                "created_at": now(),
-            }
-        )
-
-    pd.DataFrame(party_rows).to_sql("party_tb", engine, if_exists="append", index=False)
-    party_df = pd.read_sql(
-        "SELECT idx,host_user_idx FROM party_tb ORDER BY idx DESC LIMIT 3", engine
-    )
-
-    for _, row in party_df.iterrows():
-        pid = int(row["idx"])
-        host = int(row["host_user_idx"])
-        member_rows.append({"party_idx": pid, "user_idx": host, "status": "JOINED"})
-        others = [u for u in DEMO_USERS if u != host]
-
-        for j in random.sample(others, random.randint(1, 2)):
-            member_rows.append({"party_idx": pid, "user_idx": j, "status": "JOINED"})
-
-        for u in DEMO_USERS:
-            progress_rows.append(
-                {
-                    "party_idx": pid,
-                    "user_idx": u,
-                    "progress": round(random.uniform(0.1, 0.8), 2),
-                    "current_cfi_position": "/6/2[last]!/4/12",
-                    "updated_at": rand_dt(5),
-                }
-            )
-
-    pd.DataFrame(member_rows).to_sql(
-        "party_members_tb", engine, if_exists="append", index=False
-    )
-    pd.DataFrame(progress_rows).to_sql(
-        "party_book_progress_tb", engine, if_exists="append", index=False
-    )
 
 
 def seed_demo_highlights(engine):
@@ -625,11 +645,11 @@ if __name__ == "__main__":
     seed_survey_option_tags(engine)
     seed_demo_survey_responses(engine)
 
-    seed_demo_recent_progress(engine)
     seed_reviews(engine)
     seed_demo_friends(engine)
     seed_demo_messages(engine)
-    seed_demo_parties(engine)
+    seed_custom_parties(engine)
+    seed_my_progress_custom(engine)
 
     seed_demo_highlights(engine)
     seed_demo_comments(engine)
