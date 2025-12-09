@@ -56,7 +56,13 @@ def hash_pw(pw):
     return bcrypt.hashpw(pw.encode("utf-8"), bcrypt.gensalt()).decode()
 
 
-def copy_from_csv(table_name: str, csv_path: str, columns: list):
+from io import StringIO
+
+
+from io import StringIO
+
+
+def copy_from_df(table_name: str, df: pd.DataFrame, columns: list):
     col_str = ", ".join(columns)
     sql = f"""
         COPY {table_name} ({col_str})
@@ -64,13 +70,19 @@ def copy_from_csv(table_name: str, csv_path: str, columns: list):
         WITH (FORMAT csv, HEADER true, ENCODING 'UTF8');
     """
 
-    print(f"[COPY] Loading → {table_name} from {csv_path}")
+    print(f"[COPY] Loading (memory) → {table_name}")
+
+    buffer = StringIO()
+    df.to_csv(buffer, index=False)
+    buffer.seek(0)
 
     raw_conn = engine.raw_connection()
-    with raw_conn.cursor() as cur:
-        with open(csv_path, "r", encoding="utf-8") as f:
-            cur.copy_expert(sql, f)
-    raw_conn.commit()
+    try:
+        with raw_conn.cursor() as cur:
+            cur.copy_expert(sql, buffer)
+        raw_conn.commit()
+    finally:
+        raw_conn.close()
 
 
 # ======================================================================
@@ -238,19 +250,17 @@ def seed_tags(engine):
 
 
 def seed_book_tags_copy():
-    print("Preparing book_tags.csv for COPY...")
+    print("COPY book_tags from memory...")
 
     df = pd.read_csv(BOOK_TAGS_FILE)
     df = df.rename(columns={"book_id": "book_idx", "genre_id": "tag_idx"})
 
-    csv_path = os.path.join(current_dir, "tmp_book_tags_copy.csv")
-    df.to_csv(csv_path, index=False)
-
-    copy_from_csv("book_tag_tb", csv_path, ["book_idx", "tag_idx"])
+    # 메모리 COPY
+    copy_from_df("book_tag_tb", df, ["book_idx", "tag_idx"])
 
 
 def seed_ratings_copy():
-    print("Preparing ratings.csv for COPY...")
+    print("COPY ratings from memory...")
 
     df = pd.read_csv(RATINGS_FILE)
     df = df.rename(columns={"book_id": "book_idx", "user_id": "user_idx"})
@@ -258,12 +268,7 @@ def seed_ratings_copy():
     valid = set(pd.read_sql("SELECT idx FROM book_tb", engine)["idx"].tolist())
     df = df[df["book_idx"].isin(valid)]
 
-    # 임시 csv 생성
-    csv_path = os.path.join(current_dir, "tmp_ratings_copy.csv")
-    df.to_csv(csv_path, index=False)
-
-    # COPY 실행
-    copy_from_csv("book_rating_tb", csv_path, ["user_idx", "book_idx", "rating"])
+    copy_from_df("book_rating_tb", df, ["user_idx", "book_idx", "rating"])
 
 
 # ======================================================================
