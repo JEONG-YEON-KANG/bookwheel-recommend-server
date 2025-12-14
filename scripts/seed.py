@@ -13,6 +13,8 @@ import os, sys, random, bcrypt
 from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 import psycopg2
+from io import StringIO
+
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(current_dir)
@@ -128,12 +130,6 @@ def hash_pw(pw):
     return bcrypt.hashpw(pw.encode("utf-8"), bcrypt.gensalt()).decode()
 
 
-from io import StringIO
-
-
-from io import StringIO
-
-
 def copy_from_df(table_name: str, df: pd.DataFrame, columns: list):
     col_str = ", ".join(columns)
     sql = f"""
@@ -155,6 +151,14 @@ def copy_from_df(table_name: str, df: pd.DataFrame, columns: list):
         raw_conn.commit()
     finally:
         raw_conn.close()
+
+
+def rand_dt_range(min_days: int, max_days: int):
+    return datetime.now(timezone.utc) - timedelta(
+        days=random.randint(min_days, max_days),
+        hours=random.randint(0, 23),
+        minutes=random.randint(0, 59),
+    )
 
 
 # ======================================================================
@@ -298,12 +302,34 @@ def seed_books(engine):
     df["description"] = df["description"].fillna("")
     df["language_code"] = df["language_code"].fillna("")
     df["isbn13"] = df["isbn13"].apply(clean_isbn)
+    df["average_rating"] = pd.to_numeric(df["average_rating"], errors="coerce")
+    df["average_rating"] = df["average_rating"].fillna(0.0)
 
     df["book_file_path"] = "/default/book.epub"
 
-    df.loc[df["idx"] == 194, "book_file_path"] = (
-        "https://s3.amazonaws.com/epubjs/books/moby-dick.epub"
-    )
+    PARTY_BOOK_IDXS = {
+        1,
+        2,
+        3,
+        10,
+        15,
+        29,
+        34,
+        46,
+        47,
+        50,
+        194,
+        209,
+        30,
+        244,
+        446,
+    }
+
+    MOBY_EPUB = "https://s3.amazonaws.com/epubjs/books/moby-dick.epub"
+
+    df["book_file_path"] = "/default/book.epub"
+
+    df.loc[df["idx"].isin(PARTY_BOOK_IDXS), "book_file_path"] = MOBY_EPUB
 
     df[
         [
@@ -596,74 +622,220 @@ def seed_my_progress_custom(engine):
 def seed_custom_parties(engine):
     print("Seeding CUSTOM parties...")
     MOBY = 194
-    CATCHER = 8
-    PRIDE = 10
+    SILENCE = 209
+    GONE = 30
+    SHARP = 244
+    SHERLOCK = 446
 
     party_rows = [
         {
             "host_user_idx": 41293,
             "book_idx": MOBY,
             "title": "고전 명작 ‘모비딕’ 깊이 읽기",
-            "description": "끝없는 집착과 광기의 항해를 함께 따라가요. 고전이지만 쉽고 재미있게 읽는 모임입니다.",
+            "description": "끝없는 집착과 광기의 항해를 함께 따라가요.",
             "max_members": 10,
             "current_members": 3,
             "status": "OPEN",
-            "is_private": False,
-            "created_at": now(),
+            "is_private": True,
+            "created_at": rand_dt_range(1, 2),
         },
         {
-            "host_user_idx": 50704,
-            "book_idx": CATCHER,
-            "title": "더 캐처 인 더 라이 감성 토크",
-            "description": "홀든의 감정을 따라가며 각자 공감한 장면을 나누는 모임입니다.",
-            "max_members": 10,
+            "host_user_idx": 1450,
+            "book_idx": SILENCE,
+            "title": "『양들의 침묵』 심리 스릴러 토론",
+            "description": "한니발 렉터의 심리를 파헤쳐봅니다.",
+            "max_members": 3,
             "current_members": 3,
-            "status": "OPEN",
+            "status": "FULL",
             "is_private": False,
-            "created_at": now(),
+            "created_at": rand_dt_range(6, 10),
         },
         {
-            "host_user_idx": 32798,
-            "book_idx": PRIDE,
-            "title": "오만과 편견 명대사 함께 읽기",
-            "description": "엘리자베스와 다아시의 감정 변화를 이야기하는 따뜻한 분위기의 모임입니다.",
-            "max_members": 10,
+            "host_user_idx": 11,
+            "book_idx": GONE,
+            "title": "『나를 찾아줘』 반전 분석 모임",
+            "description": "후반부 반전을 중심으로 토론합니다.",
+            "max_members": 3,
             "current_members": 3,
-            "status": "OPEN",
+            "status": "FULL",
             "is_private": False,
-            "created_at": now(),
+            "created_at": rand_dt_range(5, 9),
+        },
+        {
+            "host_user_idx": 12,
+            "book_idx": SHARP,
+            "title": "어두운 심리 속으로 빠져 보아요",
+            "description": "트라우마 및 폭력 주의",
+            "max_members": 3,
+            "current_members": 3,
+            "status": "FULL",
+            "is_private": False,
+            "created_at": rand_dt_range(4, 8),
+        },
+        {
+            "host_user_idx": 120,
+            "book_idx": SHERLOCK,
+            "title": "셜록 홈즈 미스터리 읽기",
+            "description": "레전드 추리 소설 같이 읽어요",
+            "max_members": 5,
+            "current_members": 5,
+            "status": "FULL",
+            "is_private": False,
+            "created_at": rand_dt_range(3, 7),
         },
     ]
 
     pd.DataFrame(party_rows).to_sql("party_tb", engine, if_exists="append", index=False)
 
-    party_df = pd.read_sql("SELECT idx FROM party_tb ORDER BY idx DESC LIMIT 3", engine)
+    party_df = pd.read_sql(
+        """
+        SELECT idx, book_idx
+        FROM party_tb
+        WHERE book_idx IN (194, 209, 30, 244, 446)
+        """,
+        engine,
+    )
 
-    MEMBERS = [41293, 50704, 32798]
+    PARTY_MEMBERS = {
+        MOBY: [41293, 50704, 32798],
+        SILENCE: [1450, 48314, 41293],
+        GONE: [11, 41293, 120],
+        SHARP: [12, 41293, 3],
+        SHERLOCK: [120, 50704, 5797, 2048, 41293],
+    }
+
     member_rows = []
     progress_rows = []
 
     for _, row in party_df.iterrows():
         pid = int(row["idx"])
+        book_idx = int(row["book_idx"])
 
-        for i, u in enumerate(MEMBERS):
-            member_rows.append({"party_idx": pid, "user_idx": u, "status": "JOINED"})
+        members = PARTY_MEMBERS.get(book_idx, [])
+
+        for u in members:
+            member_rows.append(
+                {
+                    "party_idx": pid,
+                    "user_idx": u,
+                    "status": "JOINED",
+                }
+            )
+
             progress_rows.append(
                 {
                     "party_idx": pid,
                     "user_idx": u,
-                    "progress": round(random.uniform(0.1, 0.9), 2),
+                    "progress": round(random.uniform(0.3, 0.95), 2),
                     "current_cfi_position": "/6/2[last]!/4/12",
-                    "updated_at": now() + timedelta(minutes=i),
+                    "updated_at": rand_dt_range(0, 3),
                 }
             )
 
     pd.DataFrame(member_rows).to_sql(
         "party_members_tb", engine, if_exists="append", index=False
     )
+
     pd.DataFrame(progress_rows).to_sql(
         "party_book_progress_tb", engine, if_exists="append", index=False
     )
+
+
+def seed_open_parties(engine):
+    print("Seeding OPEN parties...")
+
+    OPEN_PARTY_BOOKS = [
+        (1, "레전드 명작 헝거게임 같이 읽기", "디스토피아 세계에서 살아남아봐요."),
+        (2, "해리포터 원작 읽어 봐야지!", "영화로만 알던 마법 세계를 소설로 즐겨봐요."),
+        (3, "설레는 뱀파이어 볼 사람", "심쿵 주의!!"),
+        (10, "오만과 편견 같이 읽기", "고전 로맨스를 즐겨요."),
+        (15, "안네의 일기 읽으며 토론해요", "한 소녀의 생각을 함께 나눕니다."),
+        (
+            29,
+            "현대 사회에 필요한 사랑 이야기, 로미오와 줄리엣",
+            "이루어질 수 없는 사랑",
+        ),
+        (
+            34,
+            "아찔한 사랑 이야기 몰래 읽으실 분",
+            "비밀스럽고 위험한 사랑이야기 가볍게 즐겨요.",
+        ),
+        (46, "서커스 속 사랑과 생존 이야기", "인간의 사랑과 생존에 대해"),
+        (
+            47,
+            "죽음이 들려주는 사랑 이야기 함께 읽기",
+            "삶과 죽음, 그리고 사랑에 대하여",
+        ),
+        (50, "상상력 산책", "유머와 상상력 붐!"),
+    ]
+
+    hosts = list(
+        (DEMO_USERS | FRIEND_REQUEST_USER | FRIEND_USERS | RECOMMEND_USERS) - {41923}
+    )
+
+    party_rows = []
+
+    for book_idx, title, description in OPEN_PARTY_BOOKS:
+        host = random.choice(hosts)
+        max_m = random.randint(4, 8)
+        cur_m = random.randint(1, max_m - 1)
+
+        party_rows.append(
+            {
+                "host_user_idx": host,
+                "book_idx": book_idx,
+                "title": title,
+                "description": description,
+                "max_members": max_m,
+                "current_members": cur_m,
+                "status": "OPEN",
+                "is_private": False,
+                "created_at": rand_dt_range(0, 5),
+            }
+        )
+
+    pd.DataFrame(party_rows).to_sql("party_tb", engine, if_exists="append", index=False)
+
+    party_df = pd.read_sql(
+        """
+        SELECT idx, host_user_idx
+        FROM party_tb
+        WHERE is_private = FALSE
+          AND status = 'OPEN'
+        ORDER BY idx DESC
+        LIMIT %s
+        """
+        % len(OPEN_PARTY_BOOKS),
+        engine,
+    )
+
+    for _, row in party_df.iterrows():
+        pidx = int(row["idx"])
+        host = int(row["host_user_idx"])
+
+        member_rows = [
+            {
+                "party_idx": pidx,
+                "user_idx": host,
+                "status": "JOINED",
+            }
+        ]
+
+        others = list((FRIEND_USERS | RECOMMEND_USERS) - {host, 41293})
+        random.shuffle(others)
+
+        for u in others[: random.randint(0, 2)]:
+            member_rows.append(
+                {
+                    "party_idx": pidx,
+                    "user_idx": u,
+                    "status": "JOINED",
+                }
+            )
+
+        pd.DataFrame(member_rows).to_sql(
+            "party_members_tb", engine, if_exists="append", index=False
+        )
 
 
 def seed_reviews(engine):
@@ -832,6 +1004,7 @@ if __name__ == "__main__":
     seed_demo_friend_requests(engine)
     seed_demo_messages(engine)
     seed_custom_parties(engine)
+    seed_open_parties(engine)
     seed_my_progress_custom(engine)
 
     seed_demo_highlights(engine)
