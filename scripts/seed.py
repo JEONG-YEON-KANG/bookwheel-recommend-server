@@ -45,6 +45,12 @@ FRIEND_USERS = {
     3,
 }
 
+FRIEND_REQUEST_USER = {
+    11,
+    893,
+    2048,
+}
+
 RECOMMEND_USERS = {
     5797,
     24071,
@@ -76,6 +82,12 @@ USER_SEED_META = {
     12: {"nickname": "온기페이지", "gender": "F", "age": 24},
     5: {"nickname": "사유의숲", "gender": "M", "age": 38},
     3: {"nickname": "가벼운책상", "gender": "M", "age": 21},
+    # -----------------------------
+    # FRIEND REQUEST USERS
+    # -----------------------------
+    11: {"nickname": "비밀독서가", "gender": "F", "age": 28},
+    893: {"nickname": "책속탐정", "gender": "M", "age": 35},
+    2048: {"nickname": "페이지워커", "gender": "F", "age": 30},
     # -----------------------------
     # RECOMMEND USERS
     # -----------------------------
@@ -186,7 +198,9 @@ def seed_users(engine, max_user_idx):
 
     S3_BASE = f"https://{AWS_BUCKET}.s3.{AWS_REGION}.amazonaws.com"
 
-    SEED_USER_IDXLIST = DEMO_USERS | FRIEND_USERS | RECOMMEND_USERS
+    SEED_USER_IDXLIST = (
+        DEMO_USERS | FRIEND_USERS | FRIEND_REQUEST_USER | RECOMMEND_USERS
+    )
 
     rows = []
     for uidx in SEED_USER_IDXLIST:
@@ -469,6 +483,23 @@ def seed_demo_survey_responses(engine):
         3: "편안한 휴식",
     }
 
+    # ---------------- FRIEND REQUEST ----------------
+    FREIND_REQUEST_GNERE = {
+        11: "미스터리/스릴러",
+        893: "미스터리/스릴러",
+        2048: "소설",
+    }
+    FREIND_REQUEST_MOOD = {
+        11: "#긴장감_넘치는",
+        893: "#긴장감_넘치는",
+        2048: "#가볍게_읽는",
+    }
+    FREIND_REQUEST_PURPOSE = {
+        11: "스트레스 해소",
+        893: "재미와 교양 쌓기",
+        2048: "편안한 휴식",
+    }
+
     # ---------------- RECOMMEND ----------------
     RECOMMEND_GENRE = {u: "미스터리/스릴러" for u in RECOMMEND_USERS}
     RECOMMEND_MOOD = {
@@ -513,6 +544,13 @@ def seed_demo_survey_responses(engine):
     for u in FRIEND_USERS:
         add_user(u, FRIEND_GENRE[u], FRIEND_MOOD[u], FRIEND_PURPOSE[u])
 
+    for u in FRIEND_REQUEST_USER:
+        add_user(
+            u,
+            FREIND_REQUEST_GNERE[u],
+            FREIND_REQUEST_MOOD[u],
+            FREIND_REQUEST_PURPOSE[u],
+        )
     for u in RECOMMEND_USERS:
         add_user(u, RECOMMEND_GENRE[u], RECOMMEND_MOOD[u], RECOMMEND_PURPOSE[u])
 
@@ -670,6 +708,33 @@ def seed_demo_friends(engine):
     pd.DataFrame(rows).to_sql("friend_tb", engine, if_exists="append", index=False)
 
 
+def seed_demo_friend_requests(engine):
+    print("Seeding demo friend requests (PENDING)...")
+
+    rows = [
+        {
+            "request_user_idx": 11,
+            "receive_user_idx": 41293,
+            "status": "PENDING",
+            "created_at": now() - timedelta(hours=2),
+        },
+        {
+            "request_user_idx": 893,
+            "receive_user_idx": 41293,
+            "status": "PENDING",
+            "created_at": now() - timedelta(hours=5),
+        },
+        {
+            "request_user_idx": 2048,
+            "receive_user_idx": 41293,
+            "status": "PENDING",
+            "created_at": now() - timedelta(days=1),
+        },
+    ]
+
+    pd.DataFrame(rows).to_sql("friend_tb", engine, if_exists="append", index=False)
+
+
 def seed_demo_messages(engine):
     print("Seeding demo messages...")
     msgs = ["이 책 봤어?", "완전 재밌음!", "추천해줘!", "읽어볼게!"]
@@ -764,6 +829,7 @@ if __name__ == "__main__":
 
     seed_reviews(engine)
     seed_demo_friends(engine)
+    seed_demo_friend_requests(engine)
     seed_demo_messages(engine)
     seed_custom_parties(engine)
     seed_my_progress_custom(engine)
