@@ -28,8 +28,68 @@ RATINGS_FILE = os.path.join(CSV_DIR, "ratings.csv")
 TAGS_FILE = os.path.join(CSV_DIR, "tags.csv")
 BOOK_TAGS_FILE = os.path.join(CSV_DIR, "book_tags.csv")
 
-DEMO_USERS = [41293, 50704, 32798]
+DEMO_USERS = {
+    41293,
+    50704,
+    32798,
+}
 
+FRIEND_USERS = {
+    120,
+    341,
+    782,
+    1450,
+    2333,
+    12,
+    5,
+    3,
+}
+
+RECOMMEND_USERS = {
+    5797,
+    24071,
+    30424,
+    32427,
+    33047,
+    46494,
+    48046,
+    48314,
+    52895,
+    53393,
+}
+
+USER_SEED_META = {
+    # -----------------------------
+    # DEMO USERS
+    # -----------------------------
+    41293: {"nickname": "스릴러헌터", "gender": "M", "age": 29},
+    50704: {"nickname": "드래곤마스터", "gender": "F", "age": 26},
+    32798: {"nickname": "하트시럽", "gender": "F", "age": 23},
+    # -----------------------------
+    # FRIEND USERS
+    # -----------------------------
+    120: {"nickname": "심야독서가", "gender": "M", "age": 34},
+    341: {"nickname": "문장수집가", "gender": "M", "age": 29},
+    782: {"nickname": "블랙페이지", "gender": "F", "age": 31},
+    1450: {"nickname": "사건의독자", "gender": "F", "age": 27},
+    2333: {"nickname": "트리거", "gender": "M", "age": 36},
+    12: {"nickname": "온기페이지", "gender": "F", "age": 24},
+    5: {"nickname": "사유의숲", "gender": "M", "age": 38},
+    3: {"nickname": "가벼운책상", "gender": "M", "age": 21},
+    # -----------------------------
+    # RECOMMEND USERS
+    # -----------------------------
+    5797: {"nickname": "단서추적자", "gender": "M", "age": 33},
+    24071: {"nickname": "침묵의독자", "gender": "M", "age": 36},
+    30424: {"nickname": "검은서가", "gender": "M", "age": 27},
+    32427: {"nickname": "의문의페이지", "gender": "M", "age": 30},
+    33047: {"nickname": "심야서재", "gender": "M", "age": 28},
+    46494: {"nickname": "사건기록자", "gender": "M", "age": 36},
+    48046: {"nickname": "추리광", "gender": "M", "age": 32},
+    48314: {"nickname": "검은문장", "gender": "M", "age": 22},
+    52895: {"nickname": "미궁독서가", "gender": "M", "age": 24},
+    53393: {"nickname": "복선수집가", "gender": "M", "age": 36},
+}
 # -------------------------------
 
 
@@ -126,7 +186,25 @@ def seed_users(engine, max_user_idx):
 
     S3_BASE = f"https://{AWS_BUCKET}.s3.{AWS_REGION}.amazonaws.com"
 
-    normals = set(range(1, max_user_idx + 1)) - set(DEMO_USERS)
+    SEED_USER_IDXLIST = DEMO_USERS | FRIEND_USERS | RECOMMEND_USERS
+
+    rows = []
+    for uidx in SEED_USER_IDXLIST:
+        meta = USER_SEED_META[uidx]
+        rows.append(
+            {
+                "idx": uidx,
+                "nickname": meta["nickname"],
+                "profile_image_path": f"{S3_BASE}/user-profile/{uidx}.jpg",
+                "type": "BASIC",
+                "age": meta["age"],
+                "gender": meta["gender"],
+                "created_at": now(),
+            }
+        )
+    user_df = pd.DataFrame(rows)
+
+    normals = set(range(1, max_user_idx + 1)) - SEED_USER_IDXLIST
 
     normal_df = pd.DataFrame(
         {
@@ -141,42 +219,7 @@ def seed_users(engine, max_user_idx):
         }
     )
 
-    demo_df = pd.DataFrame(
-        [
-            {
-                "idx": 41293,
-                "nickname": "스릴러헌터",
-                "profile_image_path": f"{S3_BASE}/user-profile/41293.jpeg",
-                "type": "BASIC",
-                "age": 29,
-                "gender": "M",
-                "created_at": now(),
-                "deleted_at": None,
-            },
-            {
-                "idx": 50704,
-                "nickname": "드래곤마스터",
-                "profile_image_path": f"{S3_BASE}/user-profile/50704.jpeg",
-                "type": "BASIC",
-                "age": 26,
-                "gender": "F",
-                "created_at": now(),
-                "deleted_at": None,
-            },
-            {
-                "idx": 32798,
-                "nickname": "하트시럽",
-                "profile_image_path": f"{S3_BASE}/user-profile/32798.jpg",
-                "type": "BASIC",
-                "age": 23,
-                "gender": "F",
-                "created_at": now(),
-                "deleted_at": None,
-            },
-        ]
-    )
-
-    all_df = pd.concat([demo_df, normal_df], ignore_index=True)
+    all_df = pd.concat([user_df, normal_df], ignore_index=True)
     all_df.to_sql("user_tb", engine, if_exists="append", index=False)
 
     cred = pd.DataFrame(
@@ -364,10 +407,12 @@ def seed_survey_option_tags(engine):
 
 
 def seed_demo_survey_responses(engine):
-    print("Seeding demo survey responses...")
+    print("Seeding ALL survey responses...")
+
     q1, q2, q3, _ = pd.read_sql(
         "SELECT idx FROM survey_question_tb ORDER BY idx", engine
     )["idx"].tolist()
+
     opt_df = pd.read_sql(
         "SELECT idx,question_idx,content FROM survey_option_tb", engine
     )
@@ -379,6 +424,7 @@ def seed_demo_survey_responses(engine):
             ].iloc[0]
         )
 
+    # ---------------- DEMO ----------------
     DEMO_GENRE = {41293: "미스터리/스릴러", 50704: "판타지", 32798: "로맨스"}
     DEMO_MOOD = {
         41293: "#긴장감_넘치는",
@@ -391,11 +437,84 @@ def seed_demo_survey_responses(engine):
         32798: "따뜻한 위로와 감동",
     }
 
+    # ---------------- FRIEND ----------------
+    FRIEND_GENRE = {
+        120: "미스터리/스릴러",
+        341: "인문/교양",
+        782: "로맨스",
+        1450: "미스터리/스릴러",
+        2333: "판타지",
+        12: "미스터리/스릴러",
+        5: "미스터리/스릴러",
+        3: "소설",
+    }
+    FRIEND_MOOD = {
+        120: "#긴장감_넘치는",
+        341: "#지적_호기심이_채워지는",
+        782: "#가슴_따뜻한",
+        1450: "#긴장감_넘치는",
+        2333: "#힐링되는",
+        12: "#긴장감_넘치는",
+        5: "#생각이_깊어지는",
+        3: "#가볍게_읽는",
+    }
+    FRIEND_PURPOSE = {
+        120: "재미와 교양 쌓기",
+        341: "새로운 관점과 아이디어 얻기",
+        782: "따뜻한 위로와 감동",
+        1450: "재미와 교양 쌓기",
+        2333: "스트레스 해소",
+        12: "스트레스 해소",
+        5: "새로운 관점과 아이디어 얻기",
+        3: "편안한 휴식",
+    }
+
+    # ---------------- RECOMMEND ----------------
+    RECOMMEND_GENRE = {u: "미스터리/스릴러" for u in RECOMMEND_USERS}
+    RECOMMEND_MOOD = {
+        5797: "#긴장감_넘치는",
+        24071: "#생각이_깊어지는",
+        30424: "#긴장감_넘치는",
+        32427: "#생각이_깊어지는",
+        33047: "#긴장감_넘치는",
+        46494: "#생각이_깊어지는",
+        48046: "#긴장감_넘치는",
+        48314: "#긴장감_넘치는",
+        52895: "#생각이_깊어지는",
+        53393: "#생각이_깊어지는",
+    }
+    RECOMMEND_PURPOSE = {
+        5797: "재미와 교양 쌓기",
+        24071: "새로운 관점과 아이디어 얻기",
+        30424: "재미와 교양 쌓기",
+        32427: "새로운 관점과 아이디어 얻기",
+        33047: "재미와 교양 쌓기",
+        46494: "새로운 관점과 아이디어 얻기",
+        48046: "재미와 교양 쌓기",
+        48314: "재미와 교양 쌓기",
+        52895: "새로운 관점과 아이디어 얻기",
+        53393: "새로운 관점과 아이디어 얻기",
+    }
+
     rows = []
+
+    def add_user(u, g, m, p):
+        rows.extend(
+            [
+                {"user_idx": u, "option_idx": get_opt(q1, g)},
+                {"user_idx": u, "option_idx": get_opt(q2, m)},
+                {"user_idx": u, "option_idx": get_opt(q3, p)},
+            ]
+        )
+
     for u in DEMO_USERS:
-        rows.append({"user_idx": u, "option_idx": get_opt(q1, DEMO_GENRE[u])})
-        rows.append({"user_idx": u, "option_idx": get_opt(q2, DEMO_MOOD[u])})
-        rows.append({"user_idx": u, "option_idx": get_opt(q3, DEMO_PURPOSE[u])})
+        add_user(u, DEMO_GENRE[u], DEMO_MOOD[u], DEMO_PURPOSE[u])
+
+    for u in FRIEND_USERS:
+        add_user(u, FRIEND_GENRE[u], FRIEND_MOOD[u], FRIEND_PURPOSE[u])
+
+    for u in RECOMMEND_USERS:
+        add_user(u, RECOMMEND_GENRE[u], RECOMMEND_MOOD[u], RECOMMEND_PURPOSE[u])
 
     pd.DataFrame(rows).to_sql(
         "survey_response_tb", engine, if_exists="append", index=False
@@ -536,20 +655,18 @@ def seed_reviews(engine):
 
 def seed_demo_friends(engine):
     print("Seeding demo friends...")
-    rows = [
-        {
-            "request_user_idx": 41293,
-            "receive_user_idx": 50704,
-            "status": "ACCEPTED",
-            "created_at": now(),
-        },
-        {
-            "request_user_idx": 50704,
-            "receive_user_idx": 32798,
-            "status": "ACCEPTED",
-            "created_at": now(),
-        },
-    ]
+    rows = []
+    for demo_uidx in DEMO_USERS:
+        for friend_uidx in FRIEND_USERS:
+            rows.append(
+                {
+                    "request_user_idx": demo_uidx,
+                    "receive_user_idx": friend_uidx,
+                    "status": "ACCEPTED",
+                    "created_at": now(),
+                }
+            )
+
     pd.DataFrame(rows).to_sql("friend_tb", engine, if_exists="append", index=False)
 
 
